@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Read(//mnt/c/Users/User/Desktop/sk/**)",
+      "Bash(python -c \"import assets; import raycaster; import renderer; print\\(''OK''\\)\")"
     ]
   }
 }

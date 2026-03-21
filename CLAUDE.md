@@ -17,13 +17,15 @@ The game is a Doom-style raycasting FPS rendered entirely through ANSI escape co
 ### Frame loop (`game.py`)
 
 `main()` runs a 30 FPS loop. Each tick:
-1. `poll_input()` → raw Win32 key states
-2. State machine dispatch: `splash` → `play` → `levelwin` / `dead`
+1. `poll_input()` → raw Win32 key states (returns 7-tuple: `keys, shoot, flip, reload_key, quit_now, cheat_l5, killall`)
+2. State machine dispatch: `splash` → `play` → `levelwin` / `dead` / `endgame`
 3. Game logic (move, shoot, AI, pickups, wall breaks, win delay)
 4. `build_frame(...)` → single giant ANSI string
 5. `_wcon(fs)` → write string to console in one call
 
 Game state is a plain `dict` (`g`). `new_game(level)` creates a fresh one. No classes wrap it.
+
+**Campaign structure**: Levels 1–5 are the main campaign. After level 5 the `endgame` state is entered (skipping `levelwin`). The endgame menu (`build_endgame_menu`) offers W=infinite play, SPACE=main menu, ESC=quit. Levels beyond 5 reuse map 5 with increasing enemy count (`8 + (level-1)*4`).
 
 ### Rendering pipeline (`renderer.py`)
 
@@ -32,11 +34,27 @@ Game state is a plain `dict` (`g`). `new_game(level)` creates a fresh one. No cl
 1. **Sky** — gradient with stars (seeded per column) and a world-anchored moon
 2. **Walls** — DDA raycasting column by column; wall height and colour from `WALL_RGB`
 3. **Floor** — distance-shaded gradient below the horizon
-4. **Sprites** — enemies and pickups sorted by distance, projected and UV-mapped; wall explosions rendered as expanding ring bursts
-5. **Compass** — top 2 rows: scrolling N/NE/E/SE… strip + enemy blips
-6. **HUD** — bottom rows: HP, ammo, kills, FPS, minimap, gun sprite, crosshair, messages
+4. **Sprites** — enemies and pickups sorted by distance, projected and UV-mapped
+5. **Wall explosions** — rendered directly with `_goto` after the main pixel loop (not via `spr` buffer) so they are never clipped
+6. **Compass** — top 2 rows: scrolling N/NE/E/SE… strip + enemy blips
+7. **HUD** — bottom rows: HP, ammo, kills, FPS, minimap, gun sprite, crosshair, messages; blinking dot in bottom-left corner
 
 The moon position is precomputed once per frame as a screen column (`_moon_sc`) from the player's world angle before the sky pixel loop runs.
+
+**`build_frame` extra parameters** (beyond cols/rows/game-state basics):
+- `gun_upgrade_anim` — float 0–1.5; drives a golden screen flash when a gun upgrade is collected
+- `wall_hp` — dict `{(mx,my): shots_remaining}`; used to render wall crack textures
+- `win_delay_t` — float 0–3; drives wall-sinking and floor-reddening effects during the 3s level-win pause
+
+**Wall sinking (win delay):** `_dissolve_r` grows from 0 outward as `win_delay_t` falls. Walls within that radius have their `top` raised toward `bot`; fully sunk walls also set `z_buf[col]=99.0` so sprites behind them stay visible.
+
+**Floor ink spill (win delay):** Per-pixel noise seed `((col*1481 + row*3761) & 0xFF)` shifts the red frontier from the player's feet toward the horizon as `_floor_red` increases from 0→1.
+
+**Enemy damage tinting:** Applied only when `e.pain_t <= 0` (skips white pain flash). Scales from `_max_hp` (16 for boss, 3 for regular) — darkens and shifts toward red as HP drops.
+
+**Wall crack texture:** Seed `(col*1481 + rel*3761 + mx_hit*29 + my_hit*67) & 0xFF` gives a deterministic per-pixel value. Three damage tiers (>0, >30%, >60% of `WALL_SHOTS`) use uniform `_dk` multipliers (0.84/0.74/0.62) so cracks stay close to the wall's own colour.
+
+**`wall_cell` tuple layout (18 elements):** `base_ch, fr, fg2, fb, br, bg2, bb, top, bot, col_c, is_outer, side, dist, dalpha, ch, wt_cell, mx_hit, my_hit`
 
 ### Raycasting (`raycaster.py`)
 
@@ -88,6 +106,10 @@ All colour constants live in `assets.py` and are imported by name into `renderer
 | `MELEE_DAMAGE` (Enemy) | `enemy.py` | `22.0` | Normal drom damage/sec |
 | `MELEE_DAMAGE` (Boss) | `enemy.py` | `44.0` | Boss damage/sec (2×) |
 | `_MOON_WORLD_A` | `renderer.py` | `1.1 rad` | Fixed world angle of the moon |
+| `_WIN_DELAY_TOTAL` | `renderer.py` | `3.0s` | Duration of wall-sink/floor-red win effect |
+| `_SINK_ZONE` | `renderer.py` | `5.0 tiles` | Radius over which wall sinking fades in |
+| `gun_upgrade_anim` | `game.py` state | `0–1.5` | Countdown for golden gun-upgrade screen flash |
+| `VK_Y` | `input.py` | `0x59` | Dev key: instantly kill all enemies |
 
 ## Adding a New Level
 

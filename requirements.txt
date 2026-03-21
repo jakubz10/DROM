@@ -1,0 +1,7 @@
+# DROM has no third-party dependencies.
+# It uses only Python standard library modules:
+#   math, time, random, ctypes
+#
+# Requirements:
+#   - Python 3.10 or higher
+#   - Windows OS (uses Win32 console APIs via ctypes)

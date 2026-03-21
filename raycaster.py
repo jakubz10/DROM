@@ -1,11 +1,9 @@
 import math
-from map_data import WORLD_MAP, MAP_H, MAP_W
+from map_data import WORLD_MAP
 
 FOV        = math.pi / 3.0
 HALF_FOV   = FOV / 2.0
 MAX_DIST   = 16.0
-WALL_CH    = "##%%++--  "
-FLOOR_CH   = ".,` "
 MOUSE_SENS = 0.003   # radians per pixel - tune to taste
 
 # DDA raycaster
@@ -21,7 +19,7 @@ def cast_ray(px, py, angle):
     for _ in range(80):
         if sdx < sdy: sdx+=ddx; mx+=sx; side=0
         else:         sdy+=ddy; my+=sy; side=1
-        if not (0<=mx<MAP_W and 0<=my<MAP_H): return 99.0,0,0
+        if not (0<=mx<len(WORLD_MAP[0]) and 0<=my<len(WORLD_MAP)): return 99.0,0,0
         wt = WORLD_MAP[my][mx]
         if wt:
             d = (sdx-ddx) if side==0 else (sdy-ddy)
@@ -35,6 +33,6 @@ def has_los(ax, ay, bx, by, steps=16):
         t  = i / steps
         mx = int(ax + (bx-ax)*t)
         my = int(ay + (by-ay)*t)
-        if not (0<=mx<MAP_W and 0<=my<MAP_H): return False
+        if not (0<=mx<len(WORLD_MAP[0]) and 0<=my<len(WORLD_MAP)): return False
         if WORLD_MAP[my][mx]: return False
     return True

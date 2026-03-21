@@ -1,72 +1,29 @@
 import math, time
 from console import _fg, _bg, _goto, HOME
-from map_data import WORLD_MAP, MAP_H, MAP_W, WALL_RGB
-from raycaster import cast_ray, FOV, HALF_FOV, MAX_DIST, WALL_CH, FLOOR_CH
+from map_data import WORLD_MAP, WALL_RGB
+from raycaster import cast_ray, FOV, HALF_FOV, MAX_DIST
 from text import TEXT
+from assets import (
+    WALL_CH,
+    LOGO_BIG, SPLASH_CTRL as _SPLASH_CTRL,
+    GUN_TEMPLATE, GUN_TEMPLATE_UPGRADED, TMPL_ROWS, TMPL_COLS,
+    COL_HUD_BG as BG_ASSET, COL_HUD_DIV, COL_HUD_LBL,
+    COL_HUD_SEP, COL_HUD_SEP_BG,
+    COL_BLIP_STRAFE, COL_BLIP_CHASE, COL_BLIP_PATROL,
+    COL_XHAIR_NORMAL, COL_XHAIR_SHOOT, COL_XHAIR_HIT,
+    COL_FLASH_CORE, COL_FLASH_MID, COL_FLASH_EDGE,
+    MM_CHAR_WALL, MM_CHAR_FLOOR, MM_CHAR_PLAYER, MM_CHAR_PLAYER_DIR,
+    MM_CHAR_HEALTH, MM_CHAR_AMMO, MM_CHAR_ENEMY,
+    COL_MM_PLAYER, COL_MM_PLAYER_DIR, COL_MM_HEALTH, COL_MM_AMMO,
+    COL_MM_ENEMY_STRAFE, COL_MM_ENEMY_CHASE, COL_MM_ENEMY_PATROL,
+    COL_END_WIN_TITLE, COL_END_WIN_SUB, COL_END_LOSE_TITLE, COL_END_LOSE_SUB,
+    COL_END_STAT, COL_LEVEL_TITLE, COL_LEVEL_SUB,
+)
 
-# ── Module-level constants (built once, reused every frame) ──────────────────
+# ── Lookup maps (built once from assets) ─────────────────────────────────────
 
-LOGO_BIG = [
-    r" _______   _______    ______   __       __ ",
-    r"/       \ /       \  /      \ /  \     /  |",
-    r"$$$$$$$  |$$$$$$$  |/$$$$$$  |$$  \   /$$ |",
-    r"$$ |  $$ |$$ |__$$ |$$ |  $$ |$$$  \ /$$$ |",
-    r"$$ |  $$ |$$    $$< $$ |  $$ |$$$$  /$$$$ |",
-    r"$$ |  $$ |$$$$$$$  |$$ |  $$ |$$ $$ $$/$$ |",
-    r"$$ |__$$ |$$ |  $$ |$$ \__$$ |$$ |$$$/ $$ |",
-    r"$$    $$/ $$ |  $$ |$$    $$/ $$ | $/  $$ |",
-    r"$$$$$$$/  $$/   $$/  $$$$$$/  $$/      $$/ ",
-]
-
-_SPLASH_CTRL = [
-    "+------------------------------------------------------+",
-    "|  W / S              Move Forward / Backward          |",
-    "|  A / D              Strafe Left / Right              |",
-    "|  Q / E              Turn Left / Right                |",
-    "|  LEFT / RIGHT       Turn Left / Right (arrows)       |",
-    "|  UP / DOWN          180 degree flip                  |",
-    "|  SPACE              Shoot                            |",
-    "|  ESC / BACKSPACE    Quit                             |",
-    "+------------------------------------------------------+",
-]
-
-GUN_TEMPLATE = [
-    # (col, row, char, r, g, b)   row 0=top, row 21=bottom
-    # Muzzle tip (top)
-    (0,0,'|',105,107,115),(1,0,'=',108,110,118),(2,0,']',105,107,115),
-    (0,1,'[',112,114,122),(1,1,'=',115,117,125),(2,1,'=',115,117,125),(3,1,']',112,114,122),
-    (1,2,'[',122,124,132),(2,2,'=',125,127,135),(3,2,'=',125,127,135),(4,2,'=',125,127,135),(5,2,']',122,124,132),
-    (2,3,'[',132,134,142),(3,3,'=',135,137,145),(4,3,'=',135,137,145),(5,3,'=',135,137,145),(6,3,'=',135,137,145),(7,3,']',132,134,142),
-    # Barrel
-    (3,4,'-',142,144,152),(4,4,'=',145,147,155),(5,4,'=',145,147,155),(6,4,'=',145,147,155),(7,4,'=',145,147,155),(8,4,'=',145,147,155),(9,4,'-',142,144,152),
-    (4,5,'[',150,152,160),(5,5,'=',152,154,162),(6,5,'=',152,154,162),(7,5,'=',152,154,162),(8,5,'=',152,154,162),(9,5,'=',152,154,162),(10,5,']',150,152,160),
-    (5,6,'-',158,160,168),(6,6,'=',160,162,170),(7,6,'=',160,162,170),(8,6,'=',160,162,170),(9,6,'=',160,162,170),(10,6,'=',160,162,170),(11,6,'-',158,160,168),
-    (6,7,'[',165,167,175),(7,7,'=',168,170,178),(8,7,'=',168,170,178),(9,7,'=',168,170,178),(10,7,'=',168,170,178),(11,7,'=',168,170,178),(12,7,']',165,167,175),
-    # Barrel junction
-    (7,8,'-',172,174,182),(8,8,'=',175,177,185),(9,8,'=',175,177,185),(10,8,'=',175,177,185),(11,8,'=',175,177,185),(12,8,'=',175,177,185),(13,8,'=',175,177,185),(14,8,'-',172,174,182),
-    (8,9,'[',180,182,190),(9,9,'=',185,187,195),(10,9,'=',185,187,195),(11,9,'=',185,187,195),(12,9,'=',185,187,195),(13,9,'=',185,187,195),(14,9,'=',185,187,195),(15,9,']',180,182,190),
-    # Slide top
-    (12,10,'[',220,222,230),(13,10,'-',220,222,230),(14,10,'-',220,222,230),(15,10,'-',220,222,230),(16,10,'-',220,222,230),(17,10,'-',220,222,230),(18,10,'-',220,222,230),(19,10,'-',220,222,230),(20,10,'-',220,222,230),(21,10,'-',220,222,230),(22,10,'-',220,222,230),(23,10,'-',220,222,230),(24,10,'-',220,222,230),(25,10,'-',220,222,230),(26,10,']',220,222,230),
-    (12,11,'[',205,207,215),(13,11,'#',215,217,225),(14,11,'#',215,217,225),(15,11,'#',215,217,225),(16,11,'#',215,217,225),(17,11,'#',215,217,225),(18,11,'#',215,217,225),(19,11,'#',215,217,225),(20,11,'#',215,217,225),(21,11,'#',215,217,225),(22,11,'#',215,217,225),(23,11,'#',215,217,225),(24,11,'#',215,217,225),(25,11,'#',215,217,225),(26,11,']',205,207,215),
-    # Receiver
-    (13,12,'[',200,200,210),(14,12,'=',210,210,218),(15,12,'=',210,210,218),(16,12,'=',210,210,218),(17,12,'=',210,210,218),(18,12,'=',210,210,218),(19,12,'=',210,210,218),(20,12,'=',210,210,218),(21,12,'=',210,210,218),(22,12,'=',210,210,218),(23,12,'=',210,210,218),(24,12,'=',210,210,218),(25,12,'=',210,210,218),(26,12,']',200,200,210),
-    (13,13,'[',185,185,195),(14,13,'#',195,195,205),(15,13,'#',195,195,205),(16,13,'#',195,195,205),(17,13,'#',195,195,205),(18,13,'#',195,195,205),(19,13,'#',195,195,205),(20,13,'#',195,195,205),(21,13,'#',195,195,205),(22,13,'#',195,195,205),(23,13,'#',195,195,205),(24,13,'#',195,195,205),(25,13,'#',195,195,205),(26,13,']',185,185,195),
-    # Trigger guard
-    (13,14,'|',150,150,160),(26,14,'|',150,150,160),
-    (14,15,'(',155,155,165),(15,15,'-',140,140,150),(16,15,'-',140,140,150),(23,15,'-',140,140,150),(24,15,'-',140,140,150),(25,15,')',155,155,165),
-    # Grip
-    (17,16,'[',105,72,43),(18,16,'#',116,78,46),(19,16,'#',116,78,46),(20,16,'#',116,78,46),(21,16,'#',116,78,46),(22,16,']',105,72,43),
-    (17,17,'[',95,65,38),(18,17,'#',108,72,42),(19,17,'#',108,72,42),(20,17,'#',108,72,42),(21,17,'#',108,72,42),(22,17,']',95,65,38),
-    (17,18,'[',85,58,33),(18,18,'#',95,63,36),(19,18,'#',95,63,36),(20,18,'#',95,63,36),(21,18,'#',95,63,36),(22,18,']',85,58,33),
-    (17,19,'[',75,52,28),(18,19,'#',83,56,30),(19,19,'#',83,56,30),(20,19,'#',83,56,30),(21,19,'#',83,56,30),(22,19,']',75,52,28),
-    (17,20,'[',68,46,25),(18,20,'#',75,50,27),(19,20,'#',75,50,27),(20,20,'#',75,50,27),(21,20,'#',75,50,27),(22,20,']',68,46,25),
-    # Magazine
-    (18,21,'(',63,43,22),(19,21,'#',70,47,24),(20,21,'#',70,47,24),(21,21,')',63,43,22),
-]
-TMPL_ROWS = 22
-TMPL_COLS = 27
-
-_tmpl_map = {(co, ro): (ch, r, g, b) for co, ro, ch, r, g, b in GUN_TEMPLATE}
+_tmpl_map          = {(co, ro): (ch, r, g, b) for co, ro, ch, r, g, b in GUN_TEMPLATE}
+_tmpl_map_upgraded = {(co, ro): (ch, r, g, b) for co, ro, ch, r, g, b in GUN_TEMPLATE_UPGRADED}
 
 # ── Functions ────────────────────────────────────────────────────────────────
 
@@ -124,11 +81,11 @@ def _build_compass(cols, angle, enemies, px, py):
 
         # Colour by state
         if e.state in ('strafe', 'alert'):
-            base_col = (255, 220, 0)    # yellow = danger
+            base_col = COL_BLIP_STRAFE
         elif e.state == 'chase':
-            base_col = (255, 100, 0)    # orange = chasing
+            base_col = COL_BLIP_CHASE
         else:
-            base_col = (220, 30, 30)    # red = patrolling
+            base_col = COL_BLIP_PATROL
 
         r2 = int(base_col[0] * brightness)
         g2 = int(base_col[1] * brightness)
@@ -214,7 +171,9 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 close_warn=0.0, level=1, total_enemies=8,
                 health_packs=None, ammo_crates=None,
                 ammo=16, reserve=32, reload_anim=0.0,
-                ammo_warn='', hit_flash=0):
+                ammo_warn='', hit_flash=0,
+                gun_upgrade=None, gun_upgraded=False,
+                wall_explosions=None):
 
     # Compass takes rows 0-1; view starts at row 2
     COMPASS_ROWS = 2
@@ -268,7 +227,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
 
     # Precompute sprites
     spr = [[None]*cols for _ in range(vr)]
-    alive = sorted((e for e in enemies if e.alive),
+    alive = sorted((e for e in enemies if e.alive or e.dying),
                    key=lambda e:(e.x-px)**2+(e.y-py)**2, reverse=True)
     for e in alive:
         dx,dy = e.x-px, e.y-py
@@ -278,11 +237,28 @@ def build_frame(cols, rows, px, py, angle, enemies,
         ea = (ea+math.pi)%(2*math.pi)-math.pi
         if abs(ea)>HALF_FOV+0.25: continue
         sx2  = int((0.5+ea/FOV)*cols)
-        sh   = min(vr*2, int(vr/max(0.1,d)))
+        _scale = 1.5 if e.is_boss else 1.0
+        sh   = min(vr*2, int(vr/max(0.1,d) * _scale))
         sw   = max(1, sh)          # full width = height (was 3//4, now 1:1 ratio)
         ts   = max(0, half-sh//2); bs=min(vr, half+sh//2)
+        # Death animation: clip top rows progressively
+        if e.dying:
+            rows_gone = int((1.0 - e.death_t) * (bs - ts))
+            ts += rows_gone
+            if ts >= bs: continue
+        # Walking animation: vertical bob when moving
+        if e.alive and e.state in ('chase','strafe','patrol','search','alert'):
+            _bob = int(math.sin(_t * 7.0 + e.eid * 1.9) * 1.5)
+            ts = max(0, ts + _bob); bs = min(vr, bs + _bob)
         x0   = sx2-sw//2
         shd  = max(0.0, 1.0-d/10.0)
+
+        # Boss eye-shift: eyes track player horizontally
+        _eye_shift = 0.0
+        if e.is_boss:
+            _ba = math.atan2(py - e.y, px - e.x)
+            _look = (_ba - e.angle + math.pi) % (2*math.pi) - math.pi
+            _eye_shift = max(-0.14, min(0.14, _look * 0.18))
 
         # First pass: build a local filled mask so we can detect edges
         # mask[dy][dx] = True if that texel is a robot part (not transparent)
@@ -294,15 +270,14 @@ def build_frame(cols, rows, px, py, angle, enemies,
             tx = dsx/max(1,sw-1)
             for dsy in range(mask_h):
                 ty = dsy/max(1,mask_h-1)
-                bx = tx-0.5
-                if (0.12<tx<0.88 and 0.08<ty<0.30): mask[dsy][dsx]=True  # head
+                if   (0.53<ty<0.65):                   mask[dsy][dsx]=True  # horizontal spear band
+                elif (0.12<tx<0.88 and 0.08<ty<0.30): mask[dsy][dsx]=True  # head
                 elif (0.38<tx<0.62 and 0.30<ty<0.36): mask[dsy][dsx]=True  # neck
                 elif (0.10<tx<0.90 and 0.36<ty<0.78): mask[dsy][dsx]=True  # body
                 elif (0.00<tx<0.12 and 0.40<ty<0.68): mask[dsy][dsx]=True  # arm_l
                 elif (0.88<tx<1.00 and 0.40<ty<0.68): mask[dsy][dsx]=True  # arm_r
                 elif (0.18<tx<0.42 and 0.78<ty<1.00): mask[dsy][dsx]=True  # leg_l
                 elif (0.58<tx<0.82 and 0.78<ty<1.00): mask[dsy][dsx]=True  # leg_r
-                elif (0.44<tx<0.56 and ty<0.08): mask[dsy][dsx]=True        # antenna
 
         for dsx in range(sw):
             sc = x0+dsx
@@ -328,19 +303,30 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 # Background behind robot - pure black for contrast
                 # (we only emit pixels where robot has a part)
 
-                is_antenna  = (0.44<tx<0.56 and ty<0.08)
-                is_antenna_tip = (0.47<tx<0.53 and ty<0.03)
+                # Horizontal spear held at hand height — 3D cylinder top/mid/bot faces
+                _in_spear_band = (0.53 < ty < 0.65)
+                spear_zone  = _in_spear_band   # any part of the spear row band
+                # 3D shading across the cylinder cross-section (ty axis = top/mid/bot)
+                _sp_top  = _in_spear_band and ty < 0.56   # top-lit face
+                _sp_bot  = _in_spear_band and ty > 0.62   # bottom shadow face
+                # Horizontal sections
+                _sp_tip_l = _in_spear_band and tx < 0.08  # left blade tip
+                _sp_tip_r = _in_spear_band and tx > 0.92  # right blade tip
+                _sp_grip  = _in_spear_band and 0.37 < tx < 0.63  # central grip
+
                 head_box    = (0.12<tx<0.88 and 0.08<ty<0.30)
                 visor       = (0.20<tx<0.80 and 0.13<ty<0.23)
-                visor_eye_l = (0.26<tx<0.38 and 0.14<ty<0.22)
-                visor_eye_r = (0.62<tx<0.74 and 0.14<ty<0.22)
+                # Boss eyes shift to track player; regular eyes fixed
+                _el0 = 0.26 + _eye_shift; _el1 = 0.38 + _eye_shift
+                _er0 = 0.62 + _eye_shift; _er1 = 0.74 + _eye_shift
+                visor_eye_l = (_el0<tx<_el1 and 0.14<ty<0.22)
+                visor_eye_r = (_er0<tx<_er1 and 0.14<ty<0.22)
                 neck        = (0.38<tx<0.62 and 0.30<ty<0.36)
                 body        = (0.10<tx<0.90 and 0.36<ty<0.78)
                 arm_l       = (0.00<tx<0.12 and 0.40<ty<0.68)
                 arm_r       = (0.88<tx<1.00 and 0.40<ty<0.68)
                 panel_h1    = (0.10<tx<0.90 and 0.48<ty<0.50)  # chest seam
                 panel_h2    = (0.10<tx<0.90 and 0.63<ty<0.65)  # belly seam
-                panel_v     = (0.48<tx<0.52 and 0.36<ty<0.78)  # center spine
                 leg_l       = (0.18<tx<0.42 and 0.78<ty<1.00)
                 leg_r       = (0.58<tx<0.82 and 0.78<ty<1.00)
                 leg_joint_l = (0.18<tx<0.42 and 0.78<ty<0.83)
@@ -359,6 +345,22 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     metal_r,metal_g,metal_b   = 255,255,255
                     accent_r,accent_g,accent_b = 255,255,255
                     vg_r,vg_g,vg_b             = 255,255,255
+                elif e.is_boss:
+                    # Boss: dark gunmetal body, red accents/visor always
+                    if e.state == 'strafe':
+                        metal_r = min(255,int(70*br_base+10))
+                        metal_g = int(50*br_base)
+                        metal_b = int(50*br_base)
+                    elif e.state in ('chase','alert'):
+                        metal_r = int(65*br_base+8)
+                        metal_g = int(48*br_base)
+                        metal_b = int(48*br_base)
+                    else:
+                        metal_r = int(55*br_base+5)
+                        metal_g = int(55*br_base+5)
+                        metal_b = int(60*br_base+5)
+                    accent_r,accent_g,accent_b = min(255,int(220*br_base)), int(20*br_base), int(20*br_base)
+                    vg_r,vg_g,vg_b             = min(255,int(255*br_base)), int(30*br_base), int(30*br_base)
                 elif e.state == 'strafe':
                     # Attacking - white body, red accents, red visor
                     metal_r  = min(255,int(240*br_base+15))
@@ -386,11 +388,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 dark_g = max(8, metal_g//10)
                 dark_b = max(8, metal_b//10)
 
-                if is_antenna_tip:
-                    ch='*'; rc,gc,bc=vg_r,vg_g,vg_b; rbg,gbg,bbg=0,0,0
-                elif is_antenna:
-                    ch='|'; rc,gc,bc=metal_r,metal_g,metal_b; rbg,gbg,bbg=0,0,0
-                elif visor_eye_l or visor_eye_r:
+                if visor_eye_l or visor_eye_r:
                     ch='#'; rc,gc,bc=vg_r,vg_g,vg_b; rbg,gbg,bbg=dark_r,dark_g,dark_b
                 elif visor:
                     ch='-'; rc,gc,bc=vg_r//2,vg_g//2,vg_b//2; rbg,gbg,bbg=dark_r,dark_g,dark_b
@@ -398,10 +396,40 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     ch='#'; rc,gc,bc=metal_r,metal_g,metal_b; rbg,gbg,bbg=dark_r,dark_g,dark_b
                 elif neck:
                     ch='|'; rc,gc,bc=metal_r//2,metal_g//2,metal_b//2; rbg,gbg,bbg=0,0,0
+                # Horizontal spear at hand height — 3D cylinder shading
+                elif spear_zone:
+                    # Compute face brightness: top-lit, mid, bottom-shadow
+                    _sf = 1.0 if not _sp_top and not _sp_bot else (1.15 if _sp_top else 0.42)
+                    if _sp_tip_l or _sp_tip_r:
+                        # Pointed metal tips
+                        if e.is_boss:
+                            _glow = (math.sin(_t*3.0 + e.eid) + 1.0)*0.5
+                            rc = min(255, int((255*_glow+160*(1-_glow))*br_base*_sf))
+                            gc = min(255, int((180*_glow+ 60*(1-_glow))*br_base*_sf))
+                            bc = int(20*br_base*_sf)
+                        else:
+                            rc = min(255, int(235*br_base*_sf))
+                            gc = min(255, int(232*br_base*_sf))
+                            bc = min(255, int(215*br_base*_sf))
+                        ch = '<' if _sp_tip_l else '>'
+                        rbg,gbg,bbg = 0,0,0
+                    elif _sp_grip:
+                        # Centre grip where hands hold — contrasting wrap
+                        if e.is_boss:
+                            rc,gc,bc = int(115*br_base*_sf),int(12*br_base*_sf),int(12*br_base*_sf)
+                        else:
+                            rc,gc,bc = int(85*br_base*_sf),int(58*br_base*_sf),int(28*br_base*_sf)
+                        ch = '=' if int(tx*14)%2==0 else '#'
+                        rbg,gbg,bbg = rc//5,gc//5,bc//5
+                    else:
+                        # Shaft — wood or metal coloured by vertical face
+                        rc = min(255, int(148*br_base*_sf))
+                        gc = min(255, int(105*br_base*_sf))
+                        bc = min(255, int( 52*br_base*_sf))
+                        ch = '=' if _sp_top else ('|' if not _sp_bot else '.')
+                        rbg,gbg,bbg = rc//7,gc//7,bc//7
                 elif panel_h1 or panel_h2:
                     ch='-'; rc,gc,bc=accent_r,accent_g,accent_b; rbg,gbg,bbg=dark_r,dark_g,dark_b
-                elif panel_v:
-                    ch='|'; rc,gc,bc=accent_r,accent_g,accent_b; rbg,gbg,bbg=dark_r,dark_g,dark_b
                 elif arm_l or arm_r:
                     ch='[' if arm_l else ']'
                     rc,gc,bc=metal_r,metal_g,metal_b; rbg,gbg,bbg=dark_r,dark_g,dark_b
@@ -442,6 +470,88 @@ def build_frame(cols, rows, px, py, angle, enemies,
                             else:
                                 spr[row][sc]=('#', 0,0,0, 255,255,255)
 
+        # Death explosion burst (early in death, driven by pain_t)
+        if e.dying and e.pain_t > 0:
+            burst_x = sx2
+            burst_y = (ts + bs) // 2
+            _base_r = max(2, sh // 6)
+            burst_r = _base_r * 2 if e.is_boss else _base_r
+            # phase: 0..1 — pain_t starts at 0.9 (boss) or 0.5 (normal), decays to 0
+            _pain_max = 0.9 if e.is_boss else 0.5
+            phase = e.pain_t / _pain_max
+            for bdr in range(-burst_r, burst_r + 1):
+                for bdc in range(-burst_r - 1, burst_r + 2):
+                    dist_e = (bdc * 0.5)**2 + bdr**2
+                    if dist_e <= burst_r**2:
+                        bc2 = burst_x + bdc; br2 = burst_y + bdr
+                        if 0 <= bc2 < cols and 0 <= br2 < vr:
+                            if z_buf[bc2] >= d:
+                                norm = dist_e / max(1, burst_r**2)
+                                if e.is_boss:
+                                    # Boss explosion: red/orange shockwave with debris chars
+                                    if norm < 0.12:
+                                        er,eg_e,eb = 255, 255, int(180*phase)
+                                    elif norm < 0.40:
+                                        er,eg_e,eb = 255, int(120*phase), 0
+                                    elif norm < 0.70:
+                                        er,eg_e,eb = int(200*phase), int(40*phase), 0
+                                    else:
+                                        er,eg_e,eb = int(100*phase), int(10*phase), 0
+                                    if norm < 0.15:   ch_e = '@'
+                                    elif norm < 0.35: ch_e = '#'
+                                    elif norm < 0.60: ch_e = 'X'
+                                    else:             ch_e = '.'
+                                else:
+                                    if norm < 0.15:   er,eg_e,eb = COL_FLASH_CORE
+                                    elif norm < 0.5:  er,eg_e,eb = COL_FLASH_MID
+                                    else:             er,eg_e,eb = COL_FLASH_EDGE
+                                    ch_e = '*' if norm < 0.2 else ('+' if norm < 0.55 else '.')
+                                spr[br2][bc2] = (ch_e, er, eg_e, eb, er//4, eg_e//8, 0)
+
+    # Wall explosion sprites
+    if wall_explosions:
+        for wx, wy, t in wall_explosions:
+            dx, dy = wx - px, wy - py
+            d = math.hypot(dx, dy)
+            if d < 0.2: continue
+            ea = math.atan2(dy, dx) - angle
+            ea = (ea + math.pi) % (2*math.pi) - math.pi
+            if abs(ea) > HALF_FOV + 0.4: continue
+            sx2 = int((0.5 + ea/FOV) * cols)
+            sh  = min(vr*2, int(vr / max(0.1, d)))
+            burst_r = max(8, sh * 2 // 3)
+            center_y = half
+            phase = min(1.0, t)        # 1.0=fresh → 0.0=done
+            inv = 1.0 - phase          # grows outward
+            outer_r = int(burst_r * (0.5 + inv * 0.5))
+            for bdr in range(-burst_r, burst_r + 1):
+                for bdc in range(-burst_r - 2, burst_r + 3):
+                    dist_e = (bdc * 0.5)**2 + bdr**2
+                    if dist_e > burst_r**2: continue
+                    bc2 = sx2 + bdc; br2 = center_y + bdr
+                    if not (0 <= bc2 < cols and 0 <= br2 < vr): continue
+                    if z_buf[bc2] < d: continue
+                    norm = math.sqrt(dist_e) / max(1, burst_r)
+                    # Ring effect: outer shell expands
+                    ring_inner = inv * 0.6
+                    ring_outer = inv * 0.6 + 0.35
+                    in_ring = ring_inner <= norm <= ring_outer
+                    if norm < 0.12:
+                        er,eg_e,eb = int(255*phase), int(255*phase), int(200*phase)
+                        ch_e = '@'
+                    elif norm < 0.30:
+                        er,eg_e,eb = int(255*phase), int(160*phase), 0
+                        ch_e = '#'
+                    elif in_ring:
+                        er,eg_e,eb = int(220*phase), int(80*phase), 0
+                        ch_e = 'X' if norm < ring_outer - 0.1 else '+'
+                    elif norm < 0.75:
+                        er,eg_e,eb = int(160*phase), int(30*phase), 0
+                        ch_e = '.'
+                    else:
+                        continue
+                    spr[br2][bc2] = (ch_e, er, eg_e, eb, er//5, eg_e//8, 0)
+
     # Health pack sprites
     if health_packs:
         for hp_pack in health_packs:
@@ -456,7 +566,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
             # Box is 1/3 of enemy height at same distance
             full_sh = min(vr*2, int(vr/max(0.1,d)))
             sh  = max(1, full_sh//3)
-            sw  = sh
+            sw  = sh * 2
             ts2 = max(0, half - sh//2); bs2 = min(vr, half + sh//2)
             x02 = sx2 - sw//2
             shd2 = max(0.4, 1.0-d/14.0)
@@ -509,7 +619,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
                             spr[row][sc]=('#', int(82*shd2),int(58*shd2),int(16*shd2), int(42*shd2),int(28*shd2),int(8*shd2))
                     elif cross_h or cross_v:
                         # Bold red cross — slight wear variation
-                        spr[row][sc]=('+', cr2 if ws>=15 else int(195*shd2), int(10*shd2),int(8*shd2), pw,pg,pb)
+                        spr[row][sc]=('█', cr2 if ws>=15 else int(195*shd2), int(10*shd2),int(8*shd2), pw,pg,pb)
                     elif is_frame:
                         # Outer white frame (slightly raised appearance)
                         spr[row][sc]=(' ', 0,0,0, pw,pg,pb)
@@ -562,6 +672,53 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     spr[row][sc]=('#', go_r,go_g,go_b, 0,0,0)
                 else:
                     spr[row][sc]=('%', mg_r,mg_g,mg_b, mg_r//3,mg_g//3,mg_b//3)
+
+    # GunUpgrade sprite — golden pulsing box
+    if gun_upgrade and gun_upgrade.active:
+        gu = gun_upgrade
+        dx,dy = gu.x-px, gu.y-py
+        d = math.hypot(dx,dy)
+        if d >= 0.2:
+            ea = math.atan2(dy,dx)-angle
+            ea = (ea+math.pi)%(2*math.pi)-math.pi
+            if abs(ea) <= HALF_FOV+0.3:
+                sx2  = int((0.5+ea/FOV)*cols)
+                full_sh = min(vr*2, int(vr/max(0.1,d)))
+                sh  = max(1, full_sh//3)
+                sw  = sh * 2
+                ts2 = max(0, half - sh//2); bs2 = min(vr, half + sh//2)
+                x02 = sx2 - sw//2
+                shd2 = max(0.4, 1.0-d/14.0)
+                pulse = 0.75 + 0.25 * math.sin(_t * 4.0)
+                gd_r = int(220*shd2*pulse); gd_g = int(170*shd2*pulse); gd_b = int(20*shd2*pulse)
+                db_r = int(80*shd2);        db_g = int(60*shd2);        db_b = int(10*shd2)
+                for dsx in range(sw):
+                    sc = x02+dsx
+                    if not (0<=sc<cols): continue
+                    if z_buf[sc]<d: continue
+                    tx2 = dsx/max(1,sw-1)
+                    for dsy in range(bs2-ts2):
+                        ty2=dsy/max(1,bs2-ts2-1); row=ts2+dsy
+                        if not (0<=row<vr): continue
+                        border2  = (tx2<0.1 or tx2>0.9 or ty2<0.1 or ty2>0.9)
+                        center2  = (0.4<tx2<0.6 and 0.4<ty2<0.6)
+                        cross_h2 = (0.35<ty2<0.65 and 0.1<tx2<0.9)
+                        cross_v2 = (0.35<tx2<0.65 and 0.1<ty2<0.9)
+                        if center2:
+                            spr[row][sc]=('*', int(255*pulse), int(220*pulse), int(60*pulse), db_r,db_g,db_b)
+                        elif cross_h2 or cross_v2:
+                            spr[row][sc]=('+', int(255*shd2*pulse), int(180*shd2*pulse), int(20*shd2*pulse), db_r//2,db_g//2,db_b//2)
+                        elif border2:
+                            spr[row][sc]=('#', db_r*2, db_g*2, db_b*2, 0,0,0)
+                        else:
+                            spr[row][sc]=('%', gd_r, gd_g, gd_b, db_r, db_g, db_b)
+
+    # Moon: anchored at a fixed world angle — moves with look-direction like a real object
+    _MOON_WORLD_A = 1.1   # world angle in radians (roughly ENE direction)
+    _MOON_SKY_ROW = max(5, half // 3)   # vertical position in sky (view-space rows)
+    _moon_ea = (_MOON_WORLD_A - angle + math.pi) % (2*math.pi) - math.pi
+    _moon_sc  = int((0.5 + _moon_ea / FOV) * cols)  # screen column for moon centre
+
     lf=lb=None
     for row in range(vr):
         out.append(_goto(0, row+voff))
@@ -684,30 +841,41 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     bg2_v = int(5  + 18*t2)
                     bb2   = int(15 + 35*t2)
 
-                    sky_x = sky_x_col[col]
-                    sky_y = row
+                    # Moon: check distance from precomputed world-anchored centre
+                    _mdx = (col - _moon_sc) * 0.5   # x compressed for text aspect ratio
+                    _mdy = row - _MOON_SKY_ROW
+                    _moon_d2 = _mdx*_mdx + _mdy*_mdy
 
-                    seed = (sky_x * 3749 + sky_y * 6113) & 0xFFFF
-
-                    is_star = seed < 80 and t2 < 0.80
-                    if is_star:
-                        bri = 150 + (seed * 17) % 105
-                        twinkle = int(math.sin(_t*1.5 + sky_x*0.1 + sky_y*0.2)*20)
-                        bri = max(100, min(255, bri + twinkle))
-                        if seed < 10:   ch = '+'
-                        elif seed < 25: ch = '*'
-                        elif seed < 45: ch = '·'
-                        else:           ch = '.'
-
-                        # Slight color variations
-                        if seed % 3 == 0:   fr, fg2, fb = bri, bri, min(255, bri + 40)
-                        elif seed % 3 == 1: fr, fg2, fb = min(255, bri + 30), min(255, bri + 20), bri
-                        else:               fr, fg2, fb = bri, bri, bri
-
-                        br, bg2, bb = br2, bg2_v, bb2
-                    else:
-                        ch = ' '; fr,fg2,fb = 0,0,0
+                    if _moon_d2 <= 55.0:   # glow + body (radius body≈6, glow up to ~7.4)
+                        _mn = math.sqrt(_moon_d2)
+                        if _mn < 3.5:     # solid disc
+                            ch = 'O'; fr,fg2,fb = 255,255,228
+                        elif _mn < 5.5:   # surface texture ring
+                            _mb = int(238 - _mn*8); fr,fg2,fb = _mb,_mb,int(_mb*0.91); ch='o'
+                        else:             # soft outer glow
+                            _mb = int(160 - _mn*12); _mb=max(40,_mb)
+                            fr,fg2,fb = _mb,_mb,int(_mb*0.85); ch='.'
                         br,bg2,bb = br2, bg2_v, bb2
+                    else:
+                        sky_x = sky_x_col[col]
+                        sky_y = row
+                        seed = (sky_x * 3749 + sky_y * 6113) & 0xFFFF
+                        is_star = seed < 220   # always visible across full sky
+                        if is_star:
+                            bri = 200 + (seed * 17) % 55
+                            twinkle = int(math.sin(_t*1.8 + sky_x*0.1 + sky_y*0.3)*25)
+                            bri = max(160, min(255, bri + twinkle))
+                            if seed < 15:   ch = '+'
+                            elif seed < 45: ch = '*'
+                            elif seed < 100: ch = '·'
+                            else:           ch = '.'
+                            if seed % 3 == 0:   fr, fg2, fb = bri, bri, min(255, bri + 60)
+                            elif seed % 3 == 1: fr, fg2, fb = min(255, bri + 40), min(255, bri + 25), bri
+                            else:               fr, fg2, fb = bri, bri, bri
+                            br, bg2, bb = br2, bg2_v, bb2
+                        else:
+                            ch = ' '; fr,fg2,fb = 0,0,0
+                            br,bg2,bb = br2, bg2_v, bb2
                     # Sky/wall seam: strong dark band at top of walls
                     sky_seam = half - 1 - row
                     if sky_seam == 0:
@@ -761,7 +929,12 @@ def build_frame(cols, rows, px, py, angle, enemies,
 
     # Gun scaling: target ~1/3 view height, but gracefully smaller on tiny terminals
     # Minimum readable size = 5 rows; aspect ratio preserved from template
-    target_h = vr // 3
+    if gun_upgraded:
+        target_h = max(8, vr // 2)
+        cur_tmpl  = _tmpl_map_upgraded
+    else:
+        target_h = vr // 3
+        cur_tmpl  = _tmpl_map
     gun_h    = max(5, min(target_h, vr - 4))   # at least 5, at most vr-4
     gun_w    = max(4, int(TMPL_COLS * gun_h / TMPL_ROWS))
     gun_w    = min(gun_w, cols * 2 // 5)        # never wider than 40% of terminal
@@ -797,7 +970,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
             continue
         for out_c in range(gun_w):
             tmpl_c = int(out_c / max(1, gun_w - 1) * (TMPL_COLS - 1))
-            pixel = _tmpl_map.get((tmpl_c, tmpl_r))
+            pixel = cur_tmpl.get((tmpl_c, tmpl_r))
             if pixel is None:
                 continue
             ch2, r2, g2, b2 = pixel
@@ -837,11 +1010,11 @@ def build_frame(cols, rows, px, py, angle, enemies,
                         # Radial colour: white center -> yellow -> orange edge
                         norm = dist_e / max(1, exp_r**2)
                         if norm < 0.15:
-                            er,eg,eb = 255,255,220
+                            er,eg,eb = COL_FLASH_CORE
                         elif norm < 0.5:
-                            er,eg,eb = 255,200,50
+                            er,eg,eb = COL_FLASH_MID
                         else:
-                            er,eg,eb = 220,80,10
+                            er,eg,eb = COL_FLASH_EDGE
                         ch_e = '*' if norm < 0.2 else ('+' if norm < 0.55 else '.')
                         out.append(_goto(gc2, gr2))
                         out.append(_fg(er,eg,eb)); out.append(_bg(er//4,eg//8,0))
@@ -851,11 +1024,11 @@ def build_frame(cols, rows, px, py, angle, enemies,
     cx2 = cols//2
     cy2 = half + voff
     if hit_flash > 0:
-        cc = (255, 30, 30)    # red on hit
+        cc = COL_XHAIR_HIT
     elif sflash > 0:
-        cc = (255, 200, 60)   # yellow on shoot
+        cc = COL_XHAIR_SHOOT
     else:
-        cc = (220, 220, 220)  # white normally
+        cc = COL_XHAIR_NORMAL
     cfg = _fg(*cc); cbg = _bg(0,0,0)
     for dc in (-4,-3,-2, 2,3,4):
         out.append(_goto(cx2+dc, cy2)); out.append(cfg); out.append(cbg); out.append('-')
@@ -894,48 +1067,48 @@ def build_frame(cols, rows, px, py, angle, enemies,
 
     # Minimap
     mm_top = voff + 1
-    for my in range(MAP_H):
+    for my in range(len(WORLD_MAP)):
         out.append(_goto(1, mm_top+my))
-        for mx in range(MAP_W):
+        for mx in range(len(WORLD_MAP[0])):
             v=WORLD_MAP[my][mx]
             if v:
                 wc2=WALL_RGB.get(v,(80,30,30))
                 out.append(_fg(wc2[0]//2,wc2[1]//2,wc2[2]//2))
-                out.append(_bg(0,0,0)); out.append('#')
+                out.append(_bg(0,0,0)); out.append(MM_CHAR_WALL)
             else:
-                out.append(_fg(20,5,5)); out.append(_bg(0,0,0)); out.append('.')
+                out.append(_fg(20,5,5)); out.append(_bg(0,0,0)); out.append(MM_CHAR_FLOOR)
     for e in enemies:
         if e.alive:
             out.append(_goto(1+int(e.x), mm_top+int(e.y)))
-            ec=(255,255,0) if e.state=='strafe' else (255,120,0) if e.state in ('chase','alert','search') else (160,0,0)
-            out.append(_fg(*ec)); out.append(_bg(0,0,0)); out.append('@')
+            ec = COL_MM_ENEMY_STRAFE if e.state=='strafe' else COL_MM_ENEMY_CHASE if e.state in ('chase','alert','search') else COL_MM_ENEMY_PATROL
+            out.append(_fg(*ec)); out.append(_bg(0,0,0)); out.append(MM_CHAR_ENEMY)
     if health_packs:
         for hp_pack in health_packs:
             if hp_pack.active:
                 out.append(_goto(1+int(hp_pack.x), mm_top+int(hp_pack.y)))
-                out.append(_fg(255,60,60)); out.append(_bg(0,0,0)); out.append('+')
+                out.append(_fg(*COL_MM_HEALTH)); out.append(_bg(0,0,0)); out.append(MM_CHAR_HEALTH)
     for ac in (ammo_crates or []):
         if ac.active:
             out.append(_goto(1+int(ac.x), mm_top+int(ac.y)))
-            out.append(_fg(80,140,60)); out.append(_bg(0,0,0)); out.append('$')
+            out.append(_fg(*COL_MM_AMMO)); out.append(_bg(0,0,0)); out.append(MM_CHAR_AMMO)
     out.append(_goto(1+int(px), mm_top+int(py)))
-    out.append(_fg(0,255,100)); out.append(_bg(0,0,0)); out.append('O')
+    out.append(_fg(*COL_MM_PLAYER)); out.append(_bg(0,0,0)); out.append(MM_CHAR_PLAYER)
     lx2=1+int(px+math.cos(angle)*1.6); ly2=mm_top+int(py+math.sin(angle)*1.6)
     if 0<=lx2<cols and voff<=ly2<voff+vr:
-        out.append(_goto(lx2,ly2)); out.append(_fg(0,180,70))
-        out.append(_bg(0,0,0)); out.append('>')
+        out.append(_goto(lx2,ly2)); out.append(_fg(*COL_MM_PLAYER_DIR))
+        out.append(_bg(0,0,0)); out.append(MM_CHAR_PLAYER_DIR)
 
     # HUD separator
     hud_sep = voff + vr
-    out.append(_goto(0, hud_sep)); out.append(_fg(80,90,140)); out.append(_bg(10,10,20))
+    out.append(_goto(0, hud_sep)); out.append(_fg(*COL_HUD_SEP)); out.append(_bg(*COL_HUD_SEP_BG))
     out.append('='*cols)
 
     hpc      = max(0, min(100, int(hp)))
     ammo_col = (255,220,60)  if ammo > 4 else (255,100,30)
     hcol     = (80,255,100)  if hpc>60 else (255,210,0) if hpc>30 else (255,60,60)
-    BG       = (15, 15, 25)
-    DIV      = (80, 80, 110)
-    LBL      = (160,180,220)
+    BG       = BG_ASSET
+    DIV      = COL_HUD_DIV
+    LBL      = COL_HUD_LBL
 
     def _put_str(text, col, row, fg_rgb, bg_rgb=None):
         _bg2 = bg_rgb if bg_rgb is not None else BG
@@ -1118,8 +1291,8 @@ def build_splash(cols, rows):
 def build_end(cols, rows, title, subtitle, prompt_text, kills_n, win):
     out=[HOME]; cx,cy=cols//2,rows//2
     _t = time.time()
-    tc=(0,220,90) if win else (210,25,15)
-    sc=(0,130,55) if win else (120,15,8)
+    tc = COL_END_WIN_TITLE  if win else COL_END_LOSE_TITLE
+    sc = COL_END_WIN_SUB    if win else COL_END_LOSE_SUB
     for row in range(rows):
         out.append(_goto(0,row))
         out.append(_fg(0,0,0))
@@ -1131,7 +1304,7 @@ def build_end(cols, rows, title, subtitle, prompt_text, kills_n, win):
     out.append(_fg(*sc)); out.append(_bg(0,0,0)); out.append(subtitle)
     stat=f"{TEXT['hud_kills']}: {kills_n}"
     out.append(_goto(cx-len(stat)//2,cy))
-    out.append(_fg(165,90,22)); out.append(_bg(0,0,0)); out.append(stat)
+    out.append(_fg(*COL_END_STAT)); out.append(_bg(0,0,0)); out.append(stat)
     blink=int(_t*2)%2==0
     out.append(_goto(cx-len(prompt_text)//2,cy+3))
     out.append(_fg(*tc) if blink else _fg(*sc))
@@ -1142,7 +1315,7 @@ def build_end(cols, rows, title, subtitle, prompt_text, kills_n, win):
 def build_level_screen(cols, rows, level, kills_n, next_enemy_count=None):
     out=[HOME]; cx,cy=cols//2,rows//2
     _t = time.time()
-    tc=(255,180,0); sc=(180,100,0)
+    tc=COL_LEVEL_TITLE; sc=COL_LEVEL_SUB
     for row in range(rows):
         out.append(_goto(0,row))
         out.append(_fg(0,0,0)); out.append(_bg(8,5,0))
@@ -1151,7 +1324,7 @@ def build_level_screen(cols, rows, level, kills_n, next_enemy_count=None):
     subtitle = TEXT["level_subtitle"]
     # next_enemy_count is passed in from game.py to avoid circular import
     nec = next_enemy_count if next_enemy_count is not None else (8 + level * 4)
-    next_lv  = f"NEXT: LEVEL {level+1}  -  {nec} ENEMIES"
+    next_lv  = f"NEXT: LEVEL {level+1}  -  {nec} DROMS"
     prompt   = TEXT["level_prompt"]
     out.append(_goto(cx-len(title)//2,    cy-4)); out.append(_fg(*tc)); out.append(_bg(0,0,0)); out.append(title)
     out.append(_goto(cx-len(subtitle)//2, cy-2)); out.append(_fg(*sc)); out.append(_bg(0,0,0)); out.append(subtitle)

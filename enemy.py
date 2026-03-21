@@ -1,18 +1,6 @@
 import math, random
-from map_data import WORLD_MAP, MAP_H, MAP_W
+from map_data import WORLD_MAP, WAYPOINTS, WALL_BREAKS
 from raycaster import has_los
-
-ENEMY_SPAWNS = [
-    (3.5, 3.5), (20.5, 3.5), (3.5, 20.5), (20.5, 20.5),
-    (7.5, 14.5), (6.5, 17.5), (17.5, 6.5), (17.5, 17.5),
-]
-
-# Patrol waypoints for bigger map
-_WAYPOINTS = [
-    (2.5,2.5),(21.5,2.5),(21.5,21.5),(2.5,21.5),
-    (11.5,2.5),(21.5,11.5),(11.5,21.5),(2.5,11.5),
-    (6.5,6.5),(17.5,6.5),(17.5,17.5),(6.5,17.5),
-]
 
 
 def _lerp_angle(a, b, t):
@@ -22,12 +10,15 @@ def _lerp_angle(a, b, t):
 
 
 class Enemy:
+    is_boss = False
+
     __slots__ = ("x","y","alive","eid",
                  "state","angle",
                  "speed","alert_t","strafe_dir",
                  "attack_cd","wp_idx","stuck_t",
                  "hp","pain_t",
-                 "search_t","last_px","last_py","hear_range")
+                 "search_t","last_px","last_py","hear_range",
+                 "dying","death_t")
 
     # speeds per state
     SPD_PATROL = 0.5
@@ -48,10 +39,12 @@ class Enemy:
         self.alert_t    = 0.0
         self.strafe_dir = random.choice((-1, 1))
         self.attack_cd  = random.uniform(0.5, 1.5)
-        self.wp_idx     = eid % len(_WAYPOINTS)
+        self.wp_idx     = eid % len(WAYPOINTS)
         self.stuck_t    = 0.0
         self.hp         = 3
         self.pain_t     = 0.0
+        self.dying      = False
+        self.death_t    = 0.0
         self.search_t   = 0.0   # time spent searching last known position
         self.last_px    = x     # last known player position
         self.last_py    = y
@@ -59,6 +52,11 @@ class Enemy:
 
     # called once per frame
     def update(self, dt, px, py, all_enemies):
+        if self.dying:
+            self.death_t = max(0.0, self.death_t - dt * 2.8)
+            if self.pain_t > 0: self.pain_t -= dt
+            if self.death_t <= 0: self.dying = False
+            return 0.0
         if not self.alive: return 0.0
 
         self._push_out_of_wall()
@@ -157,7 +155,10 @@ class Enemy:
             self.state   = 'alert'
             self.alert_t = 0.2
         if self.hp <= 0:
-            self.alive = False
+            self.alive   = False
+            self.dying   = True
+            self.death_t = 1.8 if self.is_boss else 1.0
+            self.pain_t  = 0.9 if self.is_boss else 0.5
             return True
         return False
 
@@ -167,13 +168,13 @@ class Enemy:
     def _cell_free(self, x, y):
         """True if position (x,y) is inside a free cell with MARGIN clearance."""
         mx, my = int(x), int(y)
-        if not (0 <= mx < MAP_W and 0 <= my < MAP_H): return False
+        _mw = len(WORLD_MAP[0]); _mh = len(WORLD_MAP)
+        if not (0 <= mx < _mw and 0 <= my < _mh): return False
         if WORLD_MAP[my][mx]: return False
-        # Check margin against the four nearest wall boundaries
-        if x - mx < self.MARGIN and mx > 0          and WORLD_MAP[my][mx-1]: return False
-        if mx+1 - x < self.MARGIN and mx+1 < MAP_W  and WORLD_MAP[my][mx+1]: return False
-        if y - my < self.MARGIN and my > 0           and WORLD_MAP[my-1][mx]: return False
-        if my+1 - y < self.MARGIN and my+1 < MAP_H  and WORLD_MAP[my+1][mx]: return False
+        if x - mx < self.MARGIN and mx > 0       and WORLD_MAP[my][mx-1]: return False
+        if mx+1 - x < self.MARGIN and mx+1 < _mw and WORLD_MAP[my][mx+1]: return False
+        if y - my < self.MARGIN and my > 0       and WORLD_MAP[my-1][mx]: return False
+        if my+1 - y < self.MARGIN and my+1 < _mh and WORLD_MAP[my+1][mx]: return False
         return True
 
     def _try_move(self, dx, dy):
@@ -218,16 +219,16 @@ class Enemy:
 
     def _do_patrol(self, dt, px, py):
         # Skip waypoints that are inside walls
-        for _ in range(len(_WAYPOINTS)):
-            tx, ty = _WAYPOINTS[self.wp_idx]
+        for _ in range(len(WAYPOINTS)):
+            tx, ty = WAYPOINTS[self.wp_idx]
             if self._cell_free(tx, ty): break
-            self.wp_idx = (self.wp_idx + 1) % len(_WAYPOINTS)
+            self.wp_idx = (self.wp_idx + 1) % len(WAYPOINTS)
 
-        tx, ty = _WAYPOINTS[self.wp_idx]
+        tx, ty = WAYPOINTS[self.wp_idx]
         dx = tx - self.x; dy = ty - self.y
         d  = math.hypot(dx, dy)
         if d < 0.5:
-            self.wp_idx = (self.wp_idx + 1) % len(_WAYPOINTS)
+            self.wp_idx = (self.wp_idx + 1) % len(WAYPOINTS)
             return 0.0
         target_a = math.atan2(dy, dx)
         self.angle = _lerp_angle(self.angle, target_a, dt*3)
@@ -237,7 +238,7 @@ class Enemy:
             # Nudge to next waypoint if stuck for too long
             self.stuck_t += dt
             if self.stuck_t > 1.5:
-                self.wp_idx = (self.wp_idx + 1) % len(_WAYPOINTS)
+                self.wp_idx = (self.wp_idx + 1) % len(WAYPOINTS)
                 self.stuck_t = 0.0
         else:
             self.stuck_t = 0.0
@@ -297,3 +298,62 @@ class Enemy:
             self.attack_cd = random.uniform(0.55, 1.1)  # slash cadence
             damage = self.MELEE_DAMAGE
         return damage
+
+
+class Boss(Enemy):
+    """A bigger, stronger, wall-smashing variant of the regular enemy."""
+    is_boss = True
+
+    SPD_PATROL = 0.55   # Enemy.SPD_PATROL * 1.1
+    SPD_CHASE  = 1.32   # Enemy.SPD_CHASE  * 1.1
+    SPD_STRAFE = 0.99   # Enemy.SPD_STRAFE * 1.1
+
+    SIGHT_RANGE  = 20.0
+    ATTACK_RANGE = 2.5
+    MELEE_RANGE  = 2.5
+    MELEE_DAMAGE = 44.0   # 2× normal drom (22.0)
+
+    __slots__ = ('_wall_break_cd',)
+
+    def __init__(self, x, y, eid):
+        super().__init__(x, y, eid)
+        self.hp = 16
+        self._wall_break_cd = 0.0
+
+    def update(self, dt, px, py, all_enemies):
+        if self._wall_break_cd > 0:
+            self._wall_break_cd = max(0.0, self._wall_break_cd - dt)
+        return super().update(dt, px, py, all_enemies)
+
+    def _do_chase(self, dt, px, py, dist, to_player_angle, can_see):
+        if self._wall_break_cd <= 0:
+            # Proactively smash through walls when direct path is blocked and close enough
+            if not can_see and dist < 10.0:
+                self._break_wall_toward(px, py)
+            elif self.stuck_t > 0.6:
+                self._break_wall_toward(px, py)
+        return super()._do_chase(dt, px, py, dist, to_player_angle, can_see)
+
+    def _do_strafe(self, dt, px, py, dist, to_player_angle):
+        if self._wall_break_cd <= 0 and self.stuck_t > 0.3:
+            self._break_wall_toward(px, py)
+        return super()._do_strafe(dt, px, py, dist, to_player_angle)
+
+    def _break_wall_toward(self, px, py):
+        """Break the first breakable wall (type 1-4) in a straight line toward the player."""
+        dx = px - self.x; dy = py - self.y
+        d  = math.hypot(dx, dy)
+        if d < 0.1: return
+        ux = dx / d; uy = dy / d
+        mh = len(WORLD_MAP); mw = len(WORLD_MAP[0])
+        for step in range(1, 5):
+            mx = int(self.x + ux * step); my = int(self.y + uy * step)
+            if not (0 <= mx < mw and 0 <= my < mh): return
+            wt = WORLD_MAP[my][mx]
+            if wt == 0: continue
+            if wt == 5: return          # indestructible outer wall
+            if 1 <= wt <= 4:
+                WORLD_MAP[my][mx] = 0
+                WALL_BREAKS.append((mx + 0.5, my + 0.5))
+                self._wall_break_cd = 2.0
+                return

@@ -3,15 +3,16 @@ from console import user32
 
 # Virtual key codes
 VK_W     = 0x57; VK_S = 0x53; VK_A = 0x41; VK_D = 0x44
-VK_Q     = 0x51; VK_E = 0x45; VK_R = 0x52
+VK_Q     = 0x51; VK_E = 0x45; VK_R = 0x52; VK_U = 0x55
 VK_LEFT  = 0x25; VK_RIGHT = 0x27
 VK_UP    = 0x26; VK_DOWN  = 0x28
 VK_SPACE = 0x20
 VK_ESC   = 0x1B; VK_BACK = 0x08
 
-_prev_space = False
-_prev_flip  = False
+_prev_space  = False
+_prev_flip   = False
 _prev_reload = False
+_prev_cheat  = False
 
 def poll_input():
     """
@@ -26,7 +27,7 @@ def poll_input():
     Shoot:      SPACE
     Quit:       ESC or BACKSPACE
     """
-    global _prev_space, _prev_flip, _prev_reload
+    global _prev_space, _prev_flip, _prev_reload, _prev_cheat
 
     def down(vk):
         return bool(user32.GetAsyncKeyState(vk) & 0x8000)
@@ -53,4 +54,8 @@ def poll_input():
 
     quit_now = down(VK_ESC) or down(VK_BACK)
 
-    return keys, shoot, flip, reload_key, quit_now
+    ch_now      = down(VK_U)
+    cheat_l5    = ch_now and not _prev_cheat
+    _prev_cheat = ch_now
+
+    return keys, shoot, flip, reload_key, quit_now, cheat_l5

@@ -6,7 +6,7 @@ from map_data import WORLD_MAP, load_map, WALL_BREAKS
 from raycaster import cast_ray
 from enemy import Enemy, Boss
 from pickups import _make_health_packs, _make_ammo_crates, _make_gun_upgrade
-from renderer import build_frame, build_splash, build_end, build_level_screen
+from renderer import build_frame, build_splash, build_end, build_level_screen, build_endgame_menu
 from text import TEXT
 
 
@@ -56,6 +56,7 @@ def new_game(level=1):
                 ammo_crates=_make_ammo_crates(4),
                 gun_upgrade=_make_gun_upgrade(),
                 gun_upgraded=False,
+                gun_upgrade_anim=0.0,
                 ammo=16, reserve=32,   # mag=16, reserve max=32, total max=48
                 reload_anim=0.0,
                 ammo_warn='',
@@ -87,7 +88,7 @@ def main():
             frame+=1
 
             # Poll all input this frame
-            ks, shoot, flip, reload_key, quit_now, cheat_l5 = poll_input()
+            ks, shoot, flip, reload_key, quit_now, cheat_l5, killall = poll_input()
             if quit_now: break
 
             state=g['state']
@@ -100,6 +101,16 @@ def main():
 
             # PLAY
             elif state=='play':
+                # DEV: Y = kill all enemies instantly
+                if killall:
+                    for _e in g['enemies'] + g['bosses']:
+                        if _e.alive:
+                            _e.alive = False; _e.dying = True
+                            _e.death_t = 1.8 if _e.is_boss else 1.0
+                            _e.pain_t  = 0.9 if _e.is_boss else 0.5
+                            g['kills'] += 1
+                    g['msg'] = '  [DEV] ALL DROMS KILLED  '; g['msg_t'] = 60
+
                 px,py,angle=g['px'],g['py'],g['angle']
 
                 # Rotate: Q/E keys and arrow keys; UP/DOWN = 180 deg flip
@@ -170,7 +181,12 @@ def main():
                                 if left <= 0:
                                     del g['wall_hp'][key]
                                     WORLD_MAP[hmy][hmx] = 0
-                                    g['wall_explosions'].append([hmx + 0.5, hmy + 0.5, 1.0])
+                                    _ex, _ey = hmx + 0.5, hmy + 0.5
+                                    g['wall_explosions'].append([_ex, _ey, 1.0])
+                                    for _e in g['enemies'] + g['bosses']:
+                                        if _e.alive and math.hypot(_e.x - _ex, _e.y - _ey) < 2.0:
+                                            if _e.hit(): g['kills'] += 1
+                                            elif _e.alive and _e.hit(): g['kills'] += 1
                                     g['msg'] = '  WALL DESTROYED!  '; g['msg_t'] = 30
                                 else:
                                     g['msg'] = f"  WALL: {left} HITS LEFT  "; g['msg_t'] = 15
@@ -204,6 +220,7 @@ def main():
                 if g['hit_flash']>0: g['hit_flash']-=1
                 if g['msg_t']>0:  g['msg_t']-=1
                 if g['dalpha']>0: g['dalpha']=max(0.0,g['dalpha']-2.5*dt)
+                if g['gun_upgrade_anim']>0: g['gun_upgrade_anim']=max(0.0,g['gun_upgrade_anim']-dt)
 
                 # Enemy AI - new state machine
                 for e in g['enemies']:
@@ -276,6 +293,7 @@ def main():
                     if math.hypot(gu.x-px, gu.y-py) < 0.8:
                         gu.active = False
                         g['gun_upgraded'] = True
+                        g['gun_upgrade_anim'] = 1.5
                         g['ammo'] = MAG_SIZE
                         g['msg'] = '  GUN UPGRADED! DOUBLE SHOT  '; g['msg_t'] = 80
 
@@ -283,6 +301,10 @@ def main():
                 while WALL_BREAKS:
                     bwx, bwy = WALL_BREAKS.pop()
                     g['wall_explosions'].append([bwx, bwy, 1.0])
+                    for _e in g['enemies'] + g['bosses']:
+                        if _e.alive and math.hypot(_e.x - bwx, _e.y - bwy) < 2.0:
+                            if _e.hit(): g['kills'] += 1
+                            elif _e.alive and _e.hit(): g['kills'] += 1
 
                 # Tick wall explosions
                 g['wall_explosions'] = [
@@ -296,7 +318,7 @@ def main():
                     if g['msg_t'] <= 0:
                         g['msg'] = f"  LEVEL CLEAR! NEXT IN {secs}...  "; g['msg_t'] = 5
                     if g['win_delay_t'] <= 0:
-                        g['state'] = 'levelwin'
+                        g['state'] = 'endgame' if g['level'] >= 5 else 'levelwin'
 
                 # Ammo warning state
                 if g['ammo'] == 0 and g['reserve'] == 0:
@@ -317,7 +339,8 @@ def main():
                                g['ammo'],g['reserve'],g['reload_anim'],
                                g['ammo_warn'],g['hit_flash'],
                                g['gun_upgrade'],g['gun_upgraded'],
-                               g['wall_explosions'])
+                               g['wall_explosions'],g['gun_upgrade_anim'],
+                               g['wall_hp'],g['win_delay_t'])
 
             # LEVEL WIN
             elif state=='levelwin':
@@ -325,7 +348,19 @@ def main():
                                       next_enemy_count=_enemies_for_level(g['level']+1))
                 if shoot:
                     next_level = g['level'] + 1
-                    g = new_game(next_level)
+                    if next_level > 5:
+                        g['state'] = 'endgame'
+                    else:
+                        g = new_game(next_level)
+                        g['state'] = 'play'
+
+            # CAMPAIGN COMPLETE — shown after level 5
+            elif state=='endgame':
+                fs=build_endgame_menu(cols, rows)
+                if shoot:                      # SPACE → main menu
+                    g = new_game(1); g['state'] = 'splash'
+                elif 'w' in ks:               # W → infinite levels
+                    g = new_game(g['level'] + 1)
                     g['state'] = 'play'
 
             # DEAD

@@ -173,7 +173,8 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 ammo=16, reserve=32, reload_anim=0.0,
                 ammo_warn='', hit_flash=0,
                 gun_upgrade=None, gun_upgraded=False,
-                wall_explosions=None):
+                wall_explosions=None, gun_upgrade_anim=0.0,
+                wall_hp=None, win_delay_t=0.0):
 
     # Compass takes rows 0-1; view starts at row 2
     COMPASS_ROWS = 2
@@ -181,6 +182,12 @@ def build_frame(cols, rows, px, py, angle, enemies,
     voff = COMPASS_ROWS              # vertical offset for 3-D view
     half = vr // 2
     _t   = time.time()               # cached once - used for all animations this frame
+    # Win-delay wall dissolve: progress 0→1 over 3s, radius covers full map by 2/3 progress
+    _WIN_DELAY_TOTAL = 3.0
+    # Dissolve radius grows slowly — walls within 12 units fully sunk by end of delay
+    _dissolve_r = max(0.0, (1.0 - win_delay_t / _WIN_DELAY_TOTAL) * 12.0) if win_delay_t > 0 else 0.0
+    _floor_red  = max(0.0, 1.0 - win_delay_t / _WIN_DELAY_TOTAL)           if win_delay_t > 0 else 0.0
+    _SINK_ZONE  = 5.0   # transition band: walls partially sink across this range
     out  = [HOME]
 
     # Compass bar (rows 0-1)
@@ -197,7 +204,8 @@ def build_frame(cols, rows, px, py, angle, enemies,
 
     curr_ra = _ray_base
     for col in range(cols):
-        d, side, wt = cast_ray(px, py, curr_ra)
+        _col_ra = curr_ra
+        d, side, wt = cast_ray(px, py, _col_ra)
         curr_ra += _col_scale
         z_buf[col] = d
         if not wt: continue
@@ -222,8 +230,21 @@ def build_frame(cols, rows, px, py, angle, enemies,
         ci = int(min(1.0, d/MAX_DIST)*(len(WALL_CH)-1))
         base_ch = WALL_CH[ci]
 
+        _hx = px + math.cos(_col_ra) * (d + 0.01)
+        _hy = py + math.sin(_col_ra) * (d + 0.01)
+        mx_hit = max(0, min(len(WORLD_MAP[0])-1, int(_hx)))
+        my_hit = max(0, min(len(WORLD_MAP)-1, int(_hy)))
+        # Win-delay dissolve: inner walls sink into the ground outward from player
+        if _dissolve_r > 0 and not is_outer and 1 <= wt <= 4:
+            _wall_d = math.hypot(mx_hit + 0.5 - px, my_hit + 0.5 - py)
+            if _wall_d < _dissolve_r:
+                _sf = min(1.0, (_dissolve_r - _wall_d) / _SINK_ZONE)  # 0=edge, 1=fully sunk
+                top = top + int(_sf * (bot - top))
+                if top >= bot:
+                    z_buf[col] = 99.0
+                    continue
         wall_cell[col] = (base_ch, fr_w,fg_w,fb_w, fr_w//3,fg_w//3,fb_w//3, top,bot,
-                          brick_h, brick_w, wh, brick_str, batt_h, is_outer, wt)
+                          brick_h, brick_w, wh, brick_str, batt_h, is_outer, wt, mx_hit, my_hit)
 
     # Precompute sprites
     spr = [[None]*cols for _ in range(vr)]
@@ -383,6 +404,16 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     accent_r,accent_g,accent_b = int(80*br_base),int(120*br_base),min(255,int(255*br_base))
                     vg_r,vg_g,vg_b             = int(60*br_base),min(255,int(230*br_base)),min(255,int(255*br_base))
 
+                # HP damage tinting: darker and redder as health drops (skip during pain flash)
+                if e.pain_t <= 0:
+                    _max_hp = 16 if e.is_boss else 3
+                    _hp_frac = max(0.0, min(1.0, e.hp / _max_hp))
+                    _dmg = 1.0 - _hp_frac
+                    if _dmg > 0:
+                        metal_r = min(255, int(metal_r * (1.0 - _dmg * 0.45) + _dmg * 70))
+                        metal_g = max(0, int(metal_g * (1.0 - _dmg * 0.75)))
+                        metal_b = max(0, int(metal_b * (1.0 - _dmg * 0.85)))
+
                 # Dark background panels - near-black so white pops
                 dark_r = max(8, metal_r//10)
                 dark_g = max(8, metal_g//10)
@@ -508,49 +539,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
                                     ch_e = '*' if norm < 0.2 else ('+' if norm < 0.55 else '.')
                                 spr[br2][bc2] = (ch_e, er, eg_e, eb, er//4, eg_e//8, 0)
 
-    # Wall explosion sprites
-    if wall_explosions:
-        for wx, wy, t in wall_explosions:
-            dx, dy = wx - px, wy - py
-            d = math.hypot(dx, dy)
-            if d < 0.2: continue
-            ea = math.atan2(dy, dx) - angle
-            ea = (ea + math.pi) % (2*math.pi) - math.pi
-            if abs(ea) > HALF_FOV + 0.4: continue
-            sx2 = int((0.5 + ea/FOV) * cols)
-            sh  = min(vr*2, int(vr / max(0.1, d)))
-            burst_r = max(8, sh * 2 // 3)
-            center_y = half
-            phase = min(1.0, t)        # 1.0=fresh → 0.0=done
-            inv = 1.0 - phase          # grows outward
-            outer_r = int(burst_r * (0.5 + inv * 0.5))
-            for bdr in range(-burst_r, burst_r + 1):
-                for bdc in range(-burst_r - 2, burst_r + 3):
-                    dist_e = (bdc * 0.5)**2 + bdr**2
-                    if dist_e > burst_r**2: continue
-                    bc2 = sx2 + bdc; br2 = center_y + bdr
-                    if not (0 <= bc2 < cols and 0 <= br2 < vr): continue
-                    if z_buf[bc2] < d: continue
-                    norm = math.sqrt(dist_e) / max(1, burst_r)
-                    # Ring effect: outer shell expands
-                    ring_inner = inv * 0.6
-                    ring_outer = inv * 0.6 + 0.35
-                    in_ring = ring_inner <= norm <= ring_outer
-                    if norm < 0.12:
-                        er,eg_e,eb = int(255*phase), int(255*phase), int(200*phase)
-                        ch_e = '@'
-                    elif norm < 0.30:
-                        er,eg_e,eb = int(255*phase), int(160*phase), 0
-                        ch_e = '#'
-                    elif in_ring:
-                        er,eg_e,eb = int(220*phase), int(80*phase), 0
-                        ch_e = 'X' if norm < ring_outer - 0.1 else '+'
-                    elif norm < 0.75:
-                        er,eg_e,eb = int(160*phase), int(30*phase), 0
-                        ch_e = '.'
-                    else:
-                        continue
-                    spr[br2][bc2] = (ch_e, er, eg_e, eb, er//5, eg_e//8, 0)
+    # (Wall explosions rendered after main pixel loop — see below)
 
     # Health pack sprites
     if health_packs:
@@ -728,7 +717,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
             if sp:
                 ch,fr,fg2,fb,br,bg2,bb=sp
             elif wc and wc[7]<=row<wc[8]:
-                base_ch,fr_w,fg_w,fb_w,_br_w,_bg_w,_bb_w,top_w,bot_w,brick_h,brick_w,wh_v,brick_str,batt_h,is_outer,wt_cell = wc
+                base_ch,fr_w,fg_w,fb_w,_br_w,_bg_w,_bb_w,top_w,bot_w,brick_h,brick_w,wh_v,brick_str,batt_h,is_outer,wt_cell,mx_hit,my_hit = wc
                 rel = row - top_w
                 wall_h_total = max(1, bot_w - top_w)
 
@@ -833,6 +822,36 @@ def build_frame(cols, rows, px, py, angle, enemies,
 
                 else:
                     ch,fr,fg2,fb,br,bg2,bb = base_ch,fr_w,fg_w,fb_w,_br_w,_bg_w,_bb_w
+
+                # Damage texture: cracks that grow as wall gets closer to breaking
+                if wall_hp and not is_outer and 1 <= wt_cell <= 4:
+                    _shots_left = wall_hp.get((mx_hit, my_hit), 8)
+                    _shots_taken = 8 - _shots_left
+                    if _shots_taken > 0:
+                        _dmg_frac = _shots_taken / 8.0
+                        _cseed = (col * 1481 + rel * 3761 + mx_hit * 29 + my_hit * 67) & 0xFF
+                        _crack_thresh = int(_dmg_frac * 44)
+                        if _cseed < _crack_thresh:
+                            _ci = _cseed & 3
+                            if _dmg_frac > 0.6:
+                                ch = ('X','#','x','+')[_ci]
+                                _dk = 0.62
+                            elif _dmg_frac > 0.3:
+                                ch = ('x','+','#','.')[_ci]
+                                _dk = 0.74
+                            else:
+                                ch = ('.',',','`',' ')[_ci]
+                                _dk = 0.84
+                            fr  = max(0, int(fr  * _dk))
+                            fg2 = max(0, int(fg2 * _dk))
+                            fb  = max(0, int(fb  * _dk))
+                            br = fr // 4; bg2 = fg2 // 4; bb = fb // 4
+                        elif _dmg_frac > 0.75:
+                            # Near-breaking: slight darkening of wall's own color
+                            _st = _dmg_frac * 0.18
+                            fr  = max(0, int(fr  * (1.0 - _st)))
+                            fg2 = max(0, int(fg2 * (1.0 - _st)))
+                            fb  = max(0, int(fb  * (1.0 - _st)))
             else:
                 if row < half:
                     # Realistic world-anchored sky
@@ -890,6 +909,15 @@ def build_frame(cols, rows, px, py, angle, enemies,
                     t2   = (row - half) / max(1, vr - half)
                     base_v = int(12 + 20*t2)
                     fr   = int(base_v * 0.90); fg2 = int(base_v * 0.82); fb = int(base_v * 0.70)
+                    if _floor_red > 0:
+                        # Ink spills from player's feet (t2=1) toward horizon (t2=0)
+                        # Organic edge: per-pixel noise shifts the frontier slightly
+                        _ink_noise = ((col * 1481 + row * 3761) & 0xFF) / 255.0 * 0.14
+                        _ink_frac  = max(0.0, min(1.0, (t2 - (1.0 - _floor_red) + _ink_noise) / 0.18))
+                        if _ink_frac > 0:
+                            fr  = min(255, fr  + int(_ink_frac * 22))
+                            fg2 = max(0,   fg2 - int(_ink_frac * 6))
+                            fb  = max(0,   fb  - int(_ink_frac * 6))
                     br   = max(0, fr - 4);   bg2 = max(0, fg2 - 3);  bb = max(0, fb - 3)
                     seed = (col * 1657 + row * 7331) & 0xFF
                     if   seed < 30:  ch = ','
@@ -918,10 +946,59 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 if vig>0.55:
                     iv=int(min(1.0,(vig-0.55)/0.45)*dalpha*200)
                     fr=min(255,fr+iv); br=min(255,br+iv//3)
+            if gun_upgrade_anim > 0:
+                _ua = gun_upgrade_anim / 1.5
+                _ua_int = int(_ua * (0.6 + 0.4 * math.sin(_t * 18)) * 130)
+                fr = min(255, fr + _ua_int)
+                fg2 = min(255, fg2 + int(_ua_int * 0.55))
             f=(fr,fg2,fb); b=(br,bg2,bb)
             if f!=lf: out.append(_fg(*f)); lf=f
             if b!=lb: out.append(_bg(*b)); lb=b
             out.append(ch)
+
+    # Wall explosions — rendered directly so the burst is never clipped by vr bounds
+    if wall_explosions:
+        for wx, wy, t in wall_explosions:
+            dx, dy = wx - px, wy - py
+            d = math.hypot(dx, dy)
+            if d < 0.2: continue
+            ea = math.atan2(dy, dx) - angle
+            ea = (ea + math.pi) % (2*math.pi) - math.pi
+            if abs(ea) > HALF_FOV + 0.4: continue
+            sx2 = int((0.5 + ea/FOV) * cols)
+            sh  = min(vr*2, int(vr / max(0.1, d)))
+            burst_r = max(8, sh * 2 // 3)
+            center_y = voff + half          # screen-space centre row
+            phase = min(1.0, t)
+            inv = 1.0 - phase
+            ring_inner = inv * 0.6
+            ring_outer = inv * 0.6 + 0.35
+            for bdr in range(-burst_r, burst_r + 1):
+                for bdc in range(-burst_r * 2 - 2, burst_r * 2 + 3):
+                    dist_e = (bdc * 0.5)**2 + bdr**2
+                    if dist_e > burst_r**2: continue
+                    bc2 = sx2 + bdc
+                    sr2 = center_y + bdr        # real screen row, unclamped
+                    if not (0 <= bc2 < cols and 0 <= sr2 < voff + vr): continue
+                    if z_buf[bc2] < d: continue
+                    norm = math.sqrt(dist_e) / max(1, burst_r)
+                    if norm < 0.12:
+                        er,eg_e,eb = int(255*phase), int(255*phase), int(200*phase)
+                        ch_e = '@'
+                    elif norm < 0.30:
+                        er,eg_e,eb = int(255*phase), int(160*phase), 0
+                        ch_e = '#'
+                    elif ring_inner <= norm <= ring_outer:
+                        er,eg_e,eb = int(220*phase), int(80*phase), 0
+                        ch_e = 'X' if norm < ring_outer - 0.1 else '+'
+                    elif norm < 0.75:
+                        er,eg_e,eb = int(160*phase), int(30*phase), 0
+                        ch_e = '.'
+                    else:
+                        continue
+                    out.append(_goto(bc2, sr2))
+                    out.append(_fg(er, eg_e, eb)); out.append(_bg(er//5, eg_e//8, 0))
+                    out.append(ch_e)
 
     # Gun in hand - scales to ~1/3 of the view height
     # Template defined at native 22 rows tall, 28 cols wide.
@@ -1000,7 +1077,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
     if sflash > 3:
         exp_x = gx                      # left edge = barrel tip
         exp_y = gy_base - gun_h + 1     # top of gun = muzzle
-        exp_r = max(2, gun_h // 7)
+        exp_r = max(1, int(gun_h // 7 * 0.7))
         for dr in range(-exp_r, exp_r + 1):
             for dc in range(-exp_r - 1, exp_r + 2):
                 dist_e = (dc*0.5)**2 + dr**2
@@ -1048,6 +1125,9 @@ def build_frame(cols, rows, px, py, angle, enemies,
         ea = (ea+math.pi)%(2*math.pi)-math.pi
         if abs(ea) > HALF_FOV + 0.1: continue
         sx2 = int((0.5+ea/FOV)*cols)
+        # Skip HP bar if wall is in front of the enemy
+        if 0 <= sx2 < cols and z_buf[sx2] < d:
+            continue
         sh  = min(vr*2, int(vr/max(0.1,d)))
         top_s = max(0, half - sh//2)
         label = f"[HP : {e.hp}]"
@@ -1204,6 +1284,12 @@ def build_frame(cols, rows, px, py, angle, enemies,
     out.append(_goto(0, warn_row)); out.append(_fg(0,0,0)); out.append(_bg(10,10,20))
     out.append(' ' * cols)
 
+    # Blinking dot at bottom-left corner
+    if int(_t) % 2 == 0:
+        out.append(_goto(0, warn_row))
+        out.append(_fg(160, 160, 160)); out.append(_bg(10, 10, 20))
+        out.append('.')
+
     # Collect active warning blocks
     warn_blocks = []   # list of (text, fr,fg2,fb, br,bg2,bb)
 
@@ -1333,4 +1419,67 @@ def build_level_screen(cols, rows, level, kills_n, next_enemy_count=None):
     out.append(_goto(cx-len(prompt)//2,   cy+3))
     out.append(_fg(*tc) if blink else _fg(*sc))
     out.append(_bg(0,0,0)); out.append(prompt)
+    return ''.join(out)
+
+
+_ENDGAME_LOGO = [
+    r"_____      _____        _____     ____   ____         _____                   _____  _____   ______   ",
+    r"|\    \    /    /|  ____|\    \   |    | |    |       |\    \   _____     ____|\    \|\    \ |\     \  ",
+    r"| \    \  /    / | /     /\    \  |    | |    |       | |    | /    /|   /     /\    \\\    \| \     \ ",
+    r"|  \____\/    /  //     /  \    \ |    | |    |       \/     / |    ||  /     /  \    \\|    \  \     |",
+    r" \ |    /    /  /|     |    |    ||    | |    |       /     /_  \   \/ |     |    |    ||     \  |    |",
+    r"  \|___/    /  / |     |    |    ||    | |    |      |     // \  \   \ |     |    |    ||      \ |    |",
+    r"      /    /  /  |\     \  /    /||    | |    |      |    |/   \ |    ||\     \  /    /||    |\ \|    |",
+    r"     /____/  /   | \_____\/____/ ||\___\_|____|      |\ ___/\   \|   /|| \_____\/____/ ||____||\_____/|",
+    r"    |`    | /     \ |    ||    | /| |    |    |      | |   | \______/ | \ |    ||    | /|    |/ \|   ||",
+    r"    |_____|/       \|____||____|/  \|____|____|       \|___|/\ |    | |  \|____||____|/ |____|   |___|/",
+    r"       )/             \(    )/        \(   )/            \(   \|____|/      \(    )/      \(       )/  ",
+    r"       '               '    '          '   '              '      )/          '    '        '       '   ",
+]
+
+
+def build_endgame_menu(cols, rows):
+    out = [HOME]; cx = cols // 2; _t = time.time()
+    # Same dark-red tilde background as the splash screen
+    for row in range(rows):
+        out.append(_goto(0, row))
+        out.append(_fg(18, 4, 4) if row % 2 == 0 else _fg(0, 0, 0))
+        out.append(_bg(6, 0, 0)  if row % 2 == 0 else _bg(4, 0, 0))
+        out.append(('~' if row % 2 == 0 else ' ') * cols)
+    out.append(_fg(140, 22, 22)); out.append(_bg(0, 0, 0))
+    out.append(_goto(0, 0));        out.append('=' * cols)
+    out.append(_goto(0, rows - 1)); out.append('=' * cols)
+    for r in range(1, rows - 1):
+        out.append(_goto(0, r));        out.append('|')
+        out.append(_goto(cols - 1, r)); out.append('|')
+
+    pr = int(150 + 80 * math.sin(_t * 2.5))   # same pulsing red as DROM logo
+
+    # ASCII logo — centered, flashing like the DROM logo
+    logo_top = 2
+    for li, line in enumerate(_ENDGAME_LOGO):
+        lx = max(1, cx - len(line) // 2)
+        out.append(_goto(lx, logo_top + li))
+        for ci2, ch in enumerate(line):
+            w = int(75 + 65 * math.sin(ci2 * 0.25 + _t * 3))
+            out.append(_fg(min(255, pr), w // 10, w // 14))
+            out.append(_bg(0, 0, 0))
+            out.append(ch)
+
+    menu_lines = [
+        "[ W ]       CONTINUE  INTO  INFINITE  LEVELS",
+        "[ SPACE ]   RETURN  TO  MAIN  MENU",
+        "[ ESC ]     QUIT  GAME",
+    ]
+
+    menu_top = logo_top + len(_ENDGAME_LOGO) + 2
+    for li, line in enumerate(menu_lines):
+        lx = cx - len(line) // 2
+        out.append(_goto(lx, menu_top + li))
+        for ci2, ch in enumerate(line):
+            w = int(75 + 65 * math.sin(ci2 * 0.25 + _t * 3))
+            out.append(_fg(min(255, pr), w // 10, w // 14))
+            out.append(_bg(0, 0, 0))
+            out.append(ch)
+
     return ''.join(out)

@@ -3,7 +3,7 @@ from console import user32
 
 # Virtual key codes
 VK_W     = 0x57; VK_S = 0x53; VK_A = 0x41; VK_D = 0x44
-VK_Q     = 0x51; VK_E = 0x45; VK_R = 0x52; VK_U = 0x55
+VK_Q     = 0x51; VK_E = 0x45; VK_R = 0x52; VK_U = 0x55; VK_Y = 0x59
 VK_LEFT  = 0x25; VK_RIGHT = 0x27
 VK_UP    = 0x26; VK_DOWN  = 0x28
 VK_SPACE = 0x20
@@ -13,6 +13,7 @@ _prev_space  = False
 _prev_flip   = False
 _prev_reload = False
 _prev_cheat  = False
+_prev_killall = False
 
 def poll_input():
     """
@@ -27,7 +28,7 @@ def poll_input():
     Shoot:      SPACE
     Quit:       ESC or BACKSPACE
     """
-    global _prev_space, _prev_flip, _prev_reload, _prev_cheat
+    global _prev_space, _prev_flip, _prev_reload, _prev_cheat, _prev_killall
 
     def down(vk):
         return bool(user32.GetAsyncKeyState(vk) & 0x8000)
@@ -58,4 +59,8 @@ def poll_input():
     cheat_l5    = ch_now and not _prev_cheat
     _prev_cheat = ch_now
 
-    return keys, shoot, flip, reload_key, quit_now, cheat_l5
+    ka_now       = down(VK_Y)
+    killall      = ka_now and not _prev_killall
+    _prev_killall = ka_now
+
+    return keys, shoot, flip, reload_key, quit_now, cheat_l5, killall

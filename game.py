@@ -66,7 +66,7 @@ def new_game(level=1):
                 bosses=[], bosses_spawned=False,
                 boss_count=boss_count,
                 win_delay_t=0.0,
-                wall_hp={}, wall_explosions=[])
+                wall_hp={}, wall_fall={}, wall_explosions=[])
 
 
 def main():
@@ -163,7 +163,7 @@ def main():
                                     reg_clear  = all(not e.alive for e in g['enemies'])
                                     boss_clear = all(not b.alive for b in g['bosses'])
                                     if reg_clear and boss_clear and g['bosses_spawned'] and g['win_delay_t'] <= 0:
-                                        g['win_delay_t'] = 3.0
+                                        g['win_delay_t'] = 6.0
                                         g['msg'] = '  LEVEL CLEAR!  '; g['msg_t'] = 180
                                 else:
                                     g['msg']=TEXT['msg_hit']; g['msg_t']=20
@@ -180,7 +180,7 @@ def main():
                                 left = g['wall_hp'][key]
                                 if left <= 0:
                                     del g['wall_hp'][key]
-                                    WORLD_MAP[hmy][hmx] = 0
+                                    g['wall_fall'][key] = 0.18  # start fall animation; removal deferred
                                     _ex, _ey = hmx + 0.5, hmy + 0.5
                                     g['wall_explosions'].append([_ex, _ey, 1.0])
                                     for _e in g['enemies'] + g['bosses']:
@@ -311,6 +311,14 @@ def main():
                     [wx, wy, t - dt] for wx, wy, t in g['wall_explosions'] if t - dt > 0
                 ]
 
+                # Tick wall fall animations; remove from WORLD_MAP when complete
+                for _wfk in list(g['wall_fall'].keys()):
+                    g['wall_fall'][_wfk] -= dt
+                    if g['wall_fall'][_wfk] <= 0:
+                        _wmx, _wmy = _wfk
+                        WORLD_MAP[_wmy][_wmx] = 0
+                        del g['wall_fall'][_wfk]
+
                 # Win delay countdown
                 if g['win_delay_t'] > 0:
                     g['win_delay_t'] -= dt
@@ -340,7 +348,8 @@ def main():
                                g['ammo_warn'],g['hit_flash'],
                                g['gun_upgrade'],g['gun_upgraded'],
                                g['wall_explosions'],g['gun_upgrade_anim'],
-                               g['wall_hp'],g['win_delay_t'])
+                               g['wall_hp'],g['win_delay_t'],
+                               wall_fall=g['wall_fall'])
 
             # LEVEL WIN
             elif state=='levelwin':

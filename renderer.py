@@ -174,7 +174,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 ammo_warn='', hit_flash=0,
                 gun_upgrade=None, gun_upgraded=False,
                 wall_explosions=None, gun_upgrade_anim=0.0,
-                wall_hp=None, win_delay_t=0.0):
+                wall_hp=None, win_delay_t=0.0, wall_fall=None):
 
     # Compass takes rows 0-1; view starts at row 2
     COMPASS_ROWS = 2
@@ -183,7 +183,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
     half = vr // 2
     _t   = time.time()               # cached once - used for all animations this frame
     # Win-delay wall dissolve: progress 0→1 over 3s, radius covers full map by 2/3 progress
-    _WIN_DELAY_TOTAL = 3.0
+    _WIN_DELAY_TOTAL = 6.0
     # Dissolve radius grows slowly — walls within 12 units fully sunk by end of delay
     _dissolve_r = max(0.0, (1.0 - win_delay_t / _WIN_DELAY_TOTAL) * 12.0) if win_delay_t > 0 else 0.0
     _floor_red  = max(0.0, 1.0 - win_delay_t / _WIN_DELAY_TOTAL)           if win_delay_t > 0 else 0.0
@@ -200,7 +200,9 @@ def build_frame(cols, rows, px, py, angle, enemies,
     _ray_base  = angle - HALF_FOV
     # Precompute sky_x per column (used in star rendering)
     _TWO_PI   = 2*math.pi
-    sky_x_col = [int((_ray_base + c * _col_scale) % _TWO_PI / _TWO_PI * 3000) for c in range(cols)]
+    sky_x_col   = [int((_ray_base + c * _col_scale) % _TWO_PI / _TWO_PI * 3000) for c in range(cols)]
+    _floor_cos  = [math.cos(_ray_base + c * _col_scale) for c in range(cols)]
+    _floor_sin  = [math.sin(_ray_base + c * _col_scale) for c in range(cols)]
 
     curr_ra = _ray_base
     for col in range(cols):
@@ -243,6 +245,13 @@ def build_frame(cols, rows, px, py, angle, enemies,
                 if top >= bot:
                     z_buf[col] = 99.0
                     continue
+        # Per-wall fall: sink individual wall when destroyed by player (fast, 0.4s)
+        if wall_fall and (mx_hit, my_hit) in wall_fall:
+            _fall_prog = max(0.0, min(1.0, 1.0 - wall_fall[(mx_hit, my_hit)] / 0.18))
+            top = top + int(_fall_prog * (bot - top))
+            if top >= bot:
+                z_buf[col] = 99.0
+                continue
         wall_cell[col] = (base_ch, fr_w,fg_w,fb_w, fr_w//3,fg_w//3,fb_w//3, top,bot,
                           brick_h, brick_w, wh, brick_str, batt_h, is_outer, wt, mx_hit, my_hit)
 
@@ -702,11 +711,9 @@ def build_frame(cols, rows, px, py, angle, enemies,
                         else:
                             spr[row][sc]=('%', gd_r, gd_g, gd_b, db_r, db_g, db_b)
 
-    # Moon: anchored at a fixed world angle — moves with look-direction like a real object
-    _MOON_WORLD_A = 1.1   # world angle in radians (roughly ENE direction)
-    _MOON_SKY_ROW = max(5, half // 3)   # vertical position in sky (view-space rows)
-    _moon_ea = (_MOON_WORLD_A - angle + math.pi) % (2*math.pi) - math.pi
-    _moon_sc  = int((0.5 + _moon_ea / FOV) * cols)  # screen column for moon centre
+    # Moon: fixed screen position, always visible regardless of camera angle
+    _MOON_SKY_ROW = max(5, half // 3)
+    _moon_sc      = cols // 5  # fixed column — never moves with camera
 
     lf=lb=None
     for row in range(vr):
@@ -852,6 +859,17 @@ def build_frame(cols, rows, px, py, angle, enemies,
                             fr  = max(0, int(fr  * (1.0 - _st)))
                             fg2 = max(0, int(fg2 * (1.0 - _st)))
                             fb  = max(0, int(fb  * (1.0 - _st)))
+                # Wall outline: darken edge pixels for depth and visibility (inner walls only)
+                if not is_outer:
+                    _is_top   = (rel == 0)
+                    _is_bot   = (row == bot_w - 1)
+                    _is_left  = (col == 0 or z_buf[col-1] > z_buf[col] + 0.5)
+                    _is_right = (col >= cols-1 or z_buf[col+1] > z_buf[col] + 0.5)
+                    if _is_top or _is_bot or _is_left or _is_right:
+                        fr  = max(0, int(fr  * 0.42))
+                        fg2 = max(0, int(fg2 * 0.42))
+                        fb  = max(0, int(fb  * 0.42))
+                        br  = fr // 4; bg2 = fg2 // 4; bb = fb // 4
             else:
                 if row < half:
                     # Realistic world-anchored sky
@@ -907,7 +925,7 @@ def build_frame(cols, rows, px, py, angle, enemies,
                         bb  = int(bb  * 0.55)
                 else:
                     t2   = (row - half) / max(1, vr - half)
-                    base_v = int(12 + 20*t2)
+                    base_v = int(6 + 22*t2)
                     fr   = int(base_v * 0.90); fg2 = int(base_v * 0.82); fb = int(base_v * 0.70)
                     if _floor_red > 0:
                         # Ink spills from player's feet (t2=1) toward horizon (t2=0)
@@ -919,11 +937,33 @@ def build_frame(cols, rows, px, py, angle, enemies,
                             fg2 = max(0,   fg2 - int(_ink_frac * 6))
                             fb  = max(0,   fb  - int(_ink_frac * 6))
                     br   = max(0, fr - 4);   bg2 = max(0, fg2 - 3);  bb = max(0, fb - 3)
-                    seed = (col * 1657 + row * 7331) & 0xFF
-                    if   seed < 30:  ch = ','
-                    elif seed < 60:  ch = '`'
-                    elif seed < 90:  ch = '.'
-                    else:            ch = ' '
+                    # World-space staggered brick floor (tiles fixed in world, not screen)
+                    _rd       = half / max(1, row - half)
+                    _fwx      = px + _floor_cos[col] * _rd
+                    _fwy      = py + _floor_sin[col] * _rd
+                    _wrow     = int(math.floor(_fwy * 2))
+                    _stagger  = 0.5 if (_wrow % 2) else 0.0
+                    _wrf      = (_fwy * 2) % 1.0
+                    _wcf      = (_fwx * 2 + _stagger) % 1.0
+                    _border   = 0.10
+                    _joint_h  = (_wrf < _border)
+                    _joint_v  = (_wcf < _border)
+                    if _joint_h and _joint_v:
+                        ch = '+'; fr = max(0, int(fr * 0.50)); fg2 = max(0, int(fg2 * 0.50)); fb = max(0, int(fb * 0.50)); _fadd = 0
+                    elif _joint_h:
+                        ch = '-'; fr = max(0, int(fr * 0.55)); fg2 = max(0, int(fg2 * 0.55)); fb = max(0, int(fb * 0.55)); _fadd = 0
+                    elif _joint_v:
+                        ch = '|'; fr = max(0, int(fr * 0.55)); fg2 = max(0, int(fg2 * 0.55)); fb = max(0, int(fb * 0.55)); _fadd = 0
+                    else:
+                        _wix = int(_fwx * 32); _wiy = int(_fwy * 32)
+                        _fseed = (_wix * 1657 + _wiy * 7331) & 0xFF
+                        if   _fseed < 22:  ch = '.'; _fadd = 12
+                        elif _fseed < 50:  ch = ','; _fadd = 8
+                        elif _fseed < 72:  ch = '`'; _fadd = 4
+                        else:              ch = ' '; _fadd = 0
+                    fr  = min(255, fr  + _fadd)
+                    fg2 = min(255, fg2 + _fadd)
+                    fb  = min(255, fb  + _fadd)
                     # Floor/wall seam: strong dark band at base of walls
                     seam = row - half
                     if seam == 0:

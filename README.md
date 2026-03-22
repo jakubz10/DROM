@@ -1,119 +1,59 @@
-# [>] DROM -- Terminal FPS
 
-> A retro raycasting first-person shooter that runs entirely inside your Windows terminal.
 
----
 
-## [?] What is DROM?
+       _______   _______    ______   __       __
+      /       \ /       \  /      \ /  \     /  |
+      $$$$$$$  |$$$$$$$  |/$$$$$$  |$$  \   /$$ |
+      $$ |  $$ |$$ |__$$ |$$ |  $$ |$$$  \ /$$$ |
+      $$ |  $$ |$$    $$< $$ |  $$ |$$$$  /$$$$ |
+      $$ |  $$ |$$$$$$$  |$$ |  $$ |$$ $$ $$/$$ |
+      $$ |__$$ |$$ |  $$ |$$ \__$$ |$$ |$$$/ $$ |
+      $$    $$/ $$ |  $$ |$$    $$/ $$ | $/  $$ |
+      $$$$$$$/  $$/   $$/  $$$$$$/  $$/      $$/
 
-**DROM** is a Doom-style FPS built in pure Python, rendered with ANSI escape codes directly in the Windows console. No GPU, no window, no dependencies -- just your terminal and a keyboard.
 
----
+-----------------------------------------------------------------
 
-## [+] Features
+DROM - fps 3D game that runs in Windows terminal.
 
-- [#] **Raycasting engine** -- classic Wolfenstein-style 3D rendering at 30 FPS
-- [@] **Drom enemies** -- patrol, chase, strafe, search and hear you
-- [!] **Boss Drom** -- 16 HP, 2x damage, **smashes through walls** to reach you
-- [*] **Shooting & reloading** -- magazine + reserve ammo, manual reload
-- [^] **Gun upgrade** -- pick up for double-shot spread fire
-- [=] **Destructible walls** -- shoot type 1-4 walls 8 times to break them
-- [~] **Wall explosions** -- large burst visual when walls are destroyed
-- [o] **World-anchored moon** -- sits fixed in the sky as you turn
-- [.] **Bright stars** -- always visible twinkling starfield
-- [|] **3D spears** -- enemies hold shaded spears; boss tips glow gold-red
-- [>] **Walking animation** -- droms bob as they move; boss tracks eyes toward you
-- [+] **Health packs & ammo crates** -- scattered across the map
-- [#] **Medieval castle walls** -- sandstone, dark slate, mossy iron, torchlit amber, battlements
-- [>] **Multi-level progression** -- enemies increase each level; bosses spawn after clearing droms
-- [~] **3-second win delay** -- stay in the action after the last boss dies before level ends
-- [U] **Hidden cheat code** -- press `U` on the title screen to jump to level 5
+>Retro like game inspired by DOOM that runs entirely in cmd.
 
----
+-----------------------------------------------------------------
 
-## [K] Controls
+Main task:
+> Defeat droms (enemy robots that try to eliminate you)
+> Defeat endgame drom boss that appears after you eliminate all of the rooms from current level
+> Beat 5 levels with increasing amount of droms, drom bosses and increasing size of map. After you beat all 5 levels you can still play in infinite mode.
 
-| Key | Action |
-|-----|--------|
-| `W` | Move forward |
-| `S` | Move backward |
-| `A` | Strafe left |
-| `D` | Strafe right |
-| `Q` / `<-` | Turn left |
-| `E` / `->` | Turn right |
-| `^` / `v` (arrows) | 180 deg flip |
-| `SPACE` | Shoot |
-| `R` | Reload |
-| `ESC` / `BACKSPACE` | Quit |
-| `U` *(title screen)* | [*] Secret: start at level 5 |
+-----------------------------------------------------------------
 
----
+Game mechanics:
+> Player attacks droms with gun you have.
+> Gun has 16 ammo slots; you can carry additional 32 bullets.
+> There is gun upgrade you can pick up that upgrades your gun and it deals more damage to droms.
+> Player has 100hp and can slightly heal himself with medkits that appear all over map.
+> Player can pick up ammo crates that contain 16 bullets each.
+> Walls are destructible and player can shoot them down with gun.
+> Drom boss can break through walls.
 
-## [?] Enemy Behaviour
+-----------------------------------------------------------------
 
-| State | Behaviour |
-|-------|-----------|
-| ( ) Patrol | Walks waypoints around the map |
-| (!) Alert | Spots you -- pauses briefly before charging |
-| (>) Chase | Runs toward your last known position |
-| (x) Strafe | Circles you at knife range |
-| (~) Search | Investigates last heard noise |
+Controls:
+ >    W               Movement system
+    A S D
+ > LEFT / RIGHT       Rotate camera (arrows)
+ > UP / DOWN          180 degree camera flip (arrows)
+ > Q / E              Rotate camera alternative
+ > SPACE              Shoot
+ > R                  Reload
+ > ESC / BACKSPACE    Quit
 
-**Boss Drom extras:**
-- [>] Eyes track your position
-- [#] Smashes through walls when you're out of sight or when stuck
-- [!] 2x melee damage (44 dmg/s vs normal drom's 22)
-- [*] Big explosion on death
+-----------------------------------------------------------------
 
----
+Requirements:
+ >Python 3.10+ on Windows (uses Win32 console APIs)
+ > Make sure your terminal window is large enough -- the game adapts to terminal size automatically.
 
-## [M] Map & Levels
+-----------------------------------------------------------------
 
-- [#] Castle layout with 5 wall types (1 = sandstone, 2 = dark slate, 3 = mossy iron, 4 = torchlit, 5 = indestructible battlements)
-- [^] Enemies scale: Level 1 = 8 droms, +4 per level
-- [*] Bosses: 1 on levels 1-2, 2 on level 3+
-- [!] Bosses spawn **only after** all regular droms are eliminated
-
----
-
-## [>] Running the Game
-
-**Requirements:** Python 3.10+ on Windows (uses Win32 console APIs)
-
-```bash
-python game.py
-```
-
-> Make sure your terminal window is large enough -- the game adapts to terminal size automatically.
-
----
-
-## [/] Project Structure
-
-| File | Role |
-|------|------|
-| `game.py` | Main loop, game state, input handling |
-| `renderer.py` | Frame builder -- raycasting, sprites, HUD, sky |
-| `enemy.py` | Drom & Boss AI state machines |
-| `map_data.py` | Map layout, waypoints, wall colours |
-| `raycaster.py` | DDA ray casting & line-of-sight |
-| `pickups.py` | Health packs, ammo crates, gun upgrade |
-| `input.py` | Win32 keyboard polling |
-| `console.py` | Terminal setup, ANSI output, Win32 handles |
-| `assets.py` | Shared visual/asset constants |
-| `text.py` | All player-facing strings |
-
----
-
-## [!] Tips
-
-- [+] Health packs heal 30-50 HP -- don't waste them when full
-- [$] Ammo crates fill mag first, then reserve (max 16 + 32)
-- [*] Gun upgrade doubles your shots -- grab it early
-- [=] Shoot walls strategically -- create new paths or cut off droms
-- [~] Droms can **hear** you nearby even without line of sight
-- [!] Boss will **break through walls** to reach you -- keep moving
-
----
-
-*Built with <3 in pure Python -- no dependencies, no engine, no mercy.*
+JZ

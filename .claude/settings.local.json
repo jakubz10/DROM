@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python3:*)",
       "Read(//mnt/c/Users/User/Desktop/sk/**)",
-      "Bash(python -c \"import assets; import raycaster; import renderer; print\\(''OK''\\)\")"
+      "Bash(python -c \"import assets; import raycaster; import renderer; print\\(''OK''\\)\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

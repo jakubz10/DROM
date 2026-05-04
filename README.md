@@ -95,8 +95,8 @@ When you start, you're placed inside a castle map armed with a gun. Hostile crea
   |                                                 |                 |
   |                                                 |                 |
   |===================================================| <-- Separator |
-  | HP [████████████░░░] 73%  | AMMO 12 | KILLS 3/8 | <-- Status  |
-  |    [▄▄▄▄▄▄▄▄▄▄▄   ]      | RESV +16| LVL 1     |               |
+  | HP [████████████░░░] 73%  | AMMO 12 | KILLS 3/8 | <-- Status      |
+  |    [▄▄▄▄▄▄▄▄▄▄▄   ]      | RESV +16| LVL 1     |                  |
   |       !!! DROM IS CLOSE !!!   >>> RELOAD NOW <<< | <-- Warnings   |
   +-------------------------------------------------------------------+
 ```
@@ -159,7 +159,7 @@ Located in the top-left of the viewport. Shows the full map layout, enemy positi
       |[    -----   ]|          
       |[    %%%%%   ]|
       '--------------'
-      <=====*=*=*=====> 
+      <=====*=*=*====> 
          ||      ||
          ##      ##
          ==      ==
